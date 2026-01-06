@@ -284,7 +284,7 @@ function computePriorityCounts(graphqlResponseData) {
     const payloadValue = item?.payload?.value;
     const payloadObj = safeJsonParse(payloadValue);
 
-    const caseNumber = payloadObj?.displayValue;
+    const recordNumber = payloadObj?.displayValue;
     const priorityDisplay =
       typeof payloadObj?.changes?.priority?.displayValue === "string"
         ? payloadObj.changes.priority.displayValue.trim()
@@ -292,9 +292,10 @@ function computePriorityCounts(graphqlResponseData) {
 
     // We don't render case numbers (per requirement), but we do a quick sanity check
     // so malformed payloads don't get counted under a real bucket.
-    const looksLikeCase = typeof caseNumber === "string" && /^CS\d+/i.test(caseNumber);
+    const looksLikeRecord =
+      typeof recordNumber === "string" && /^(CS\d+|CSTASK\d+)/i.test(recordNumber.trim());
 
-    if (!looksLikeCase || typeof priorityDisplay !== "string") {
+    if (!looksLikeRecord || typeof priorityDisplay !== "string") {
       counts.Unknown += 1;
       continue;
     }
@@ -320,7 +321,9 @@ function computePriorityCountsFromListLayout(graphqlResponseData) {
   };
 
   const rows =
-    graphqlResponseData?.data?.GlideListLayout_Query?.getListLayout?.layoutQuery?.queryRows || [];
+    graphqlResponseData?.data?.GlideListLayout_Query?.getTinyListLayout?.layoutQuery?.queryRows ||
+    graphqlResponseData?.data?.GlideListLayout_Query?.getListLayout?.layoutQuery?.queryRows ||
+    [];
 
   for (const row of rows) {
     // Only handle non-grouped rows
@@ -472,68 +475,43 @@ function buildLiveOpenCasesGraphqlBody() {
 }
 
 function buildAgentListGraphqlBody(listId, tinyId, limit = 100, offset = 0) {
-  // For agent list links (list-id + tiny-id). In many instances, the server can
-  // resolve the saved list using listId/tiny even when the URL doesn't contain
-  // sysparm_query.
+  // For agent list links (list-id + tiny-id). The reliable way to resolve these
+  // (including task queues) is via getTinyListLayout, which returns the list's
+  // underlying table/query/rows.
   return {
     operationName: "nowRecordListConnected_min",
     variables: {
-      table: "sn_customerservice_case",
-      view: "",
-      columns: "number,priority",
-      fixedQuery: "",
-      query: "",
+      tiny: tinyId,
+      runHighlightedValuesQuery: false,
       limit,
       offset,
-      queryCategory: "list",
-      maxColumns: 50,
-      listId,
-      listTitle: "",
-      runHighlightedValuesQuery: false,
-      menuSelection: "sys_ux_my_list",
       ignoreTotalRecordCount: false,
-      columnPreferenceKey: "",
-      tiny: tinyId
+      columnPreferenceKey: ""
     },
     query: `
       query nowRecordListConnected_min(
-        $columns:String
-        $listId:String
-        $maxColumns:Int
+        $tiny:String!
+        $runHighlightedValuesQuery:Boolean!
         $limit:Int
         $offset:Int
-        $query:String
-        $fixedQuery:String
-        $table:String!
-        $view:String
-        $runHighlightedValuesQuery:Boolean!
-        $tiny:String
-        $queryCategory:String
-        $listTitle:String
-        $menuSelection:String
         $ignoreTotalRecordCount:Boolean
         $columnPreferenceKey:String
       ){
         GlideListLayout_Query{
-          getListLayout(
-            columns:$columns
-            listId:$listId
-            maxColumns:$maxColumns
+          getTinyListLayout(
+            tiny:$tiny
+            runHighlightedValuesQuery:$runHighlightedValuesQuery
             limit:$limit
             offset:$offset
-            query:$query
-            fixedQuery:$fixedQuery
-            table:$table
-            view:$view
-            runHighlightedValuesQuery:$runHighlightedValuesQuery
-            tiny:$tiny
-            queryCategory:$queryCategory
-            listTitle:$listTitle
-            menuSelection:$menuSelection
             ignoreTotalRecordCount:$ignoreTotalRecordCount
             columnPreferenceKey:$columnPreferenceKey
           ){
+            tableLabel
+            table
+            listTitle
+            listId
             layoutQuery{
+              table
               count
               queryRows{
                 ... on GlideListLayout_QueryRowType{
@@ -562,6 +540,8 @@ async function fetchAgentListCounts(listId, tinyId) {
   const maxRecords = 20000;
   let offset = 0;
   let total = null;
+  let tableLabel = "";
+  let table = "";
 
   while (offset < maxRecords) {
     // eslint-disable-next-line no-await-in-loop
@@ -577,9 +557,17 @@ async function fetchAgentListCounts(listId, tinyId) {
     }
 
     const data = resp.data;
-    const layout = data?.data?.GlideListLayout_Query?.getListLayout?.layoutQuery;
+    const tinyLayout = data?.data?.GlideListLayout_Query?.getTinyListLayout;
+    const layout = tinyLayout?.layoutQuery;
     const rows = layout?.queryRows || [];
     if (typeof layout?.count === "number") total = layout.count;
+
+    // keep metadata from the first successful page
+    if (!tableLabel && typeof tinyLayout?.tableLabel === "string") tableLabel = tinyLayout.tableLabel.trim();
+    if (!table) {
+      if (typeof layout?.table === "string") table = layout.table.trim();
+      else if (typeof tinyLayout?.table === "string") table = tinyLayout.table.trim();
+    }
 
     // Count this page
     const pageCounts = computePriorityCountsFromListLayout(data);
@@ -594,7 +582,7 @@ async function fetchAgentListCounts(listId, tinyId) {
   }
 
   const truncated = offset >= maxRecords;
-  return { success: true, counts, truncated };
+  return { success: true, counts, truncated, tableLabel, table };
 }
 
 function buildGraphqlBody(condition) {
@@ -653,6 +641,7 @@ async function run() {
     }
 
     let customCounts;
+    let displayTopic = entry.topic;
     if (parsed.listId && parsed.tinyId) {
       // eslint-disable-next-line no-await-in-loop
       const agentCountsResp = await fetchAgentListCounts(parsed.listId, parsed.tinyId);
@@ -673,11 +662,14 @@ async function run() {
         continue;
       }
       customCounts = agentCountsResp.counts;
+      if (agentCountsResp.tableLabel) {
+        displayTopic = `${entry.topic} (${agentCountsResp.tableLabel})`;
+      }
     } else {
       // eslint-disable-next-line no-await-in-loop
       const countsResponse = await sendCaseCountsRequest({ table: parsed.table, query: parsed.query });
       if (!countsResponse) {
-        blocks.push("", `<strong>${entry.topic} - 0</strong>`, "No response from background (case counts)");
+        blocks.push("", `<strong>${entry.topic} - 0</strong>`, "No response from background (record counts)");
         continue;
       }
 
@@ -702,8 +694,8 @@ async function run() {
       customCounts = countsResponse.counts;
     }
 
-    blocks.push("", formatCountsBlock(entry.topic, customCounts));
-    notifyUpdates.push({ queueId: entry.id, topic: entry.topic, counts: customCounts });
+    blocks.push("", formatCountsBlock(displayTopic, customCounts));
+    notifyUpdates.push({ queueId: entry.id, topic: displayTopic, counts: customCounts });
   }
 
   output.innerHTML = blocks.join("\n");

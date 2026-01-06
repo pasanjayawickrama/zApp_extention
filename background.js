@@ -266,7 +266,9 @@ function emptyCounts() {
 function computePriorityCountsFromListLayoutResponse(graphqlJson) {
   const counts = emptyCounts();
   const rows =
-    graphqlJson?.data?.GlideListLayout_Query?.getListLayout?.layoutQuery?.queryRows || [];
+    graphqlJson?.data?.GlideListLayout_Query?.getTinyListLayout?.layoutQuery?.queryRows ||
+    graphqlJson?.data?.GlideListLayout_Query?.getListLayout?.layoutQuery?.queryRows ||
+    [];
 
   for (const row of rows) {
     const rowData = row?.rowData;
@@ -286,62 +288,37 @@ function buildAgentListGraphqlBody(listId, tinyId, limit = 100, offset = 0) {
   return {
     operationName: "nowRecordListConnected_min",
     variables: {
-      table: "sn_customerservice_case",
-      view: "",
-      columns: "number,priority",
-      fixedQuery: "",
-      query: "",
+      tiny: tinyId,
+      runHighlightedValuesQuery: false,
       limit,
       offset,
-      queryCategory: "list",
-      maxColumns: 50,
-      listId,
-      listTitle: "",
-      runHighlightedValuesQuery: false,
-      menuSelection: "sys_ux_my_list",
       ignoreTotalRecordCount: false,
-      columnPreferenceKey: "",
-      tiny: tinyId
+      columnPreferenceKey: ""
     },
     query: `
       query nowRecordListConnected_min(
-        $columns:String
-        $listId:String
-        $maxColumns:Int
+        $tiny:String!
+        $runHighlightedValuesQuery:Boolean!
         $limit:Int
         $offset:Int
-        $query:String
-        $fixedQuery:String
-        $table:String!
-        $view:String
-        $runHighlightedValuesQuery:Boolean!
-        $tiny:String
-        $queryCategory:String
-        $listTitle:String
-        $menuSelection:String
         $ignoreTotalRecordCount:Boolean
         $columnPreferenceKey:String
       ){
         GlideListLayout_Query{
-          getListLayout(
-            columns:$columns
-            listId:$listId
-            maxColumns:$maxColumns
+          getTinyListLayout(
+            tiny:$tiny
+            runHighlightedValuesQuery:$runHighlightedValuesQuery
             limit:$limit
             offset:$offset
-            query:$query
-            fixedQuery:$fixedQuery
-            table:$table
-            view:$view
-            runHighlightedValuesQuery:$runHighlightedValuesQuery
-            tiny:$tiny
-            queryCategory:$queryCategory
-            listTitle:$listTitle
-            menuSelection:$menuSelection
             ignoreTotalRecordCount:$ignoreTotalRecordCount
             columnPreferenceKey:$columnPreferenceKey
           ){
+            tableLabel
+            table
+            listTitle
+            listId
             layoutQuery{
+              table
               count
               queryRows{
                 ... on GlideListLayout_QueryRowType{
@@ -387,7 +364,8 @@ async function fetchCountsForAgentList(listId, tinyId) {
     if (!resp.success) return resp;
 
     const graphqlJson = resp.data;
-    const layout = graphqlJson?.data?.GlideListLayout_Query?.getListLayout?.layoutQuery;
+    const tinyLayout = graphqlJson?.data?.GlideListLayout_Query?.getTinyListLayout;
+    const layout = tinyLayout?.layoutQuery;
     const rows = layout?.queryRows || [];
     if (typeof layout?.count === "number") total = layout.count;
 

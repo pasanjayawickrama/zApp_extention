@@ -1,6 +1,6 @@
 # IFS Queue Monitor
 
-This is a Chrome/Edge MV3 extension that shows **case counts by priority** for queues on `https://support.ifs.com/*`.
+This is a Chrome/Edge MV3 extension that shows **record counts by priority** (Cases and Tasks) for queues on `https://support.ifs.com/*`.
 
 It uses your existing login session (it does **not** store credentials). If you're not logged in, the popup will ask you to sign in.
 
@@ -16,7 +16,7 @@ It uses your existing login session (it does **not** store credentials). If you'
 2. Click the extension icon to open the popup.
 3. On first use, the popup asks for:
    - **Topic**: any label you want (e.g. the queue name)
-   - **Queue link**: paste a ServiceNow list link that contains `sysparm_query`
+   - **Queue link**: paste a ServiceNow list link (either a classic `..._list.do?sysparm_query=...` link or an agent-list `list-id/tiny-id` link)
 
 The popup will then show counts by priority.
 
@@ -25,6 +25,8 @@ The popup will then show counts by priority.
 Paste a list URL that looks like one of these:
 
 - `https://support.ifs.com/sn_customerservice_case_list.do?sysparm_query=...`
+- `https://support.ifs.com/sn_customerservice_task_list.do?sysparm_query=...`
+- `https://support.ifs.com/now/cwf/agent/list/params/list-id/<LIST_ID>/tiny-id/<TINY_ID>`
 - Classic nav wrapper URLs are also supported as long as they ultimately include a `..._list.do?sysparm_query=...` target.
 
 ## Notes / limitations
