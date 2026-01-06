@@ -12,8 +12,43 @@
   </div>
 
   <div class="card">
-    <pre id="output" class="output">Loading...</pre>
-    <div class="hint">Shows counts by priority for two live queues.</div>
+    <div id="setup" class="setup" hidden>
+      <div class="setupTitle">Set up your queue</div>
+      <label class="label" for="topic">Topic</label>
+      <input id="topic" class="input" type="text" placeholder="e.g. Manu - Manu All" autocomplete="off" />
+
+      <label class="label" for="link">Queue link</label>
+      <textarea
+        id="link"
+        class="textarea"
+        rows="4"
+        placeholder="Paste a support.ifs.com list link that contains sysparm_query"
+      ></textarea>
+
+      <div class="setupActions">
+        <button id="save" class="button" type="button">Add</button>
+        <button id="done" class="linkButton" type="button">Back to counts</button>
+      </div>
+      <div class="hint">Saved links sync with your browser profile.</div>
+      <pre id="setupError" class="error" hidden></pre>
+
+      <div class="divider"></div>
+      <div class="savedLinksHeader">
+        <div class="setupTitle" style="margin:0;">Saved links</div>
+        <button id="removeAll" class="removeButton" type="button">Remove all</button>
+      </div>
+      <div id="savedLinks" class="savedLinks"></div>
+    </div>
+
+    <div id="main" hidden>
+      <div class="mainHeader">
+        <div>
+          <div class="hint">Counts by priority.</div>
+        </div>
+        <button id="change" class="linkButton" type="button">Change</button>
+      </div>
+      <pre id="output" class="output">Loading...</pre>
+    </div>
   </div>
 
   <script src="popup.js"></script>

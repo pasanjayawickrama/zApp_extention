@@ -1,14 +1,8 @@
-# IFS Support Fetch Observer (Step 1) — Self-test
+# IFS Queue Monitor
 
-This extension is intentionally minimal and has **no UI**, **no storage**, and **does not handle login/credentials**.
+This is a Chrome/Edge MV3 extension that shows **case counts by priority** for queues on `https://support.ifs.com/*`.
 
-## What it captures
-
-- Only runs on: `https://support.ifs.com/*`
-- Only observes **page `fetch()`** responses (not XHR, not WebSocket).
-- Only forwards responses whose URL path contains `/api/` or `/now/`.
-- Only forwards bodies that successfully parse as JSON.
-- Uses `response.clone()` so it does **not** consume the page’s original response body.
+It uses your existing login session (it does **not** store credentials). If you're not logged in, the popup will ask you to sign in.
 
 ## Load (Chrome / Edge)
 
@@ -18,23 +12,22 @@ This extension is intentionally minimal and has **no UI**, **no storage**, and *
 
 ## Verify it works
 
-1. Open a new tab to `https://support.ifs.com/` (or any path under it).
-2. Open DevTools for the extension **service worker**:
-   - Go back to `chrome://extensions`
-   - Find the extension
-   - Click **Service worker** (or **Inspect views** → service worker)
-3. In another tab (on `https://support.ifs.com/*`), do something that triggers ServiceNow API calls (for example navigating a page that loads tickets/queues).
+1. Open a tab to `https://support.ifs.com/` and sign in.
+2. Click the extension icon to open the popup.
+3. On first use, the popup asks for:
+   - **Topic**: any label you want (e.g. the queue name)
+   - **Queue link**: paste a ServiceNow list link that contains `sysparm_query`
 
-When a matching JSON fetch completes, the service worker console should show:
+The popup will then show counts by priority.
 
-```
-===== IFS QUEUE RAW JSON =====
-{ ...pretty JSON... }
-===== END =====
-```
+### What link should I paste?
+
+Paste a list URL that looks like one of these:
+
+- `https://support.ifs.com/sn_customerservice_case_list.do?sysparm_query=...`
+- Classic nav wrapper URLs are also supported as long as they ultimately include a `..._list.do?sysparm_query=...` target.
 
 ## Notes / limitations
 
-- This step only intercepts **`window.fetch`**. If the site uses `XMLHttpRequest`, those responses will not be captured.
-- Some ServiceNow endpoints may return non-JSON or error pages; those are ignored.
-- The extension does not modify or block any requests; it only observes and forwards parsed JSON.
+- The popup stores your topic/link in `chrome.storage.sync` for your browser profile.
+- The extension does not modify or block any requests; it only reads counts.

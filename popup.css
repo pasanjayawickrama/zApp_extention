@@ -56,6 +56,167 @@ body{
   box-shadow: 0 8px 24px rgba(0,0,0,0.35);
 }
 
+.setupTitle{
+  font-size: 13px;
+  color: var(--accent-2);
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.label{
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 10px 0 6px;
+}
+
+.input,
+.textarea{
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(0,0,0,0.18);
+  color: var(--text);
+  outline: none;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.textarea{
+  resize: vertical;
+  min-height: 86px;
+}
+
+.input:focus,
+.textarea:focus{
+  border-color: rgba(167, 139, 250, 0.45);
+}
+
+.button{
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  border-radius: 10px;
+  background: rgba(124, 58, 237, 0.22);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.setupActions{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.setupActions .button{
+  flex: 1;
+  width: auto;
+}
+
+.setupActions .linkButton{
+  margin-top: 10px;
+}
+
+.savedLinks{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 170px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.savedLinksHeader{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 6px;
+}
+
+.savedLinkRow{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(0,0,0,0.14);
+}
+
+.savedLinkText{
+  min-width: 0;
+}
+
+.savedLinkTopic{
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.savedLinkUrl{
+  font-size: 11px;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.removeButton{
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.removeButton:hover{
+  color: var(--text);
+  border-color: rgba(244, 240, 255, 0.22);
+}
+
+.button:hover{
+  background: rgba(124, 58, 237, 0.30);
+}
+
+.mainHeader{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.mainTopic{
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-2);
+}
+
+.linkButton{
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.linkButton:hover{
+  color: var(--text);
+  border-color: rgba(244, 240, 255, 0.22);
+}
+
 .output{
   margin: 0;
   white-space: pre-wrap;
@@ -64,6 +225,9 @@ body{
   font-size: 12.5px;
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
+  max-height: 420px;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .output strong{
@@ -80,4 +244,17 @@ body{
   margin-top: 10px;
   font-size: 11px;
   color: var(--muted);
+}
+
+.error{
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid rgba(244, 240, 255, 0.14);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(0,0,0,0.22);
+  color: rgba(244, 240, 255, 0.86);
+  font-family: inherit;
+  font-size: 12px;
 }
