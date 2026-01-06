@@ -10,6 +10,16 @@ It uses your existing login session (it does **not** store credentials). If you'
 2. Enable **Developer mode**.
 3. Click **Load unpacked** and select this folder.
 
+## Load (Firefox)
+
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click **Load Temporary Add-on…**
+3. Select the `manifest.json` file in this folder.
+
+Notes:
+- This `firefox` branch uses a Firefox-friendly WebExtension manifest (MV2).
+- Minimum Firefox version is set to `74.0` because the code uses modern JavaScript (optional chaining / nullish coalescing).
+
 ## Verify it works
 
 1. Open a tab to `https://support.ifs.com/` and sign in.

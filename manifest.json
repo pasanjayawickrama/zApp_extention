@@ -1,13 +1,13 @@
 {
-  "manifest_version": 3,
+  "manifest_version": 2,
   "name": "IFS Queue Monitor",
   "version": "0.1",
-  "permissions": ["storage", "notifications", "alarms"],
-  "host_permissions": ["https://support.ifs.com/*"],
+  "permissions": ["storage", "notifications", "alarms", "https://support.ifs.com/*"],
   "background": {
-    "service_worker": "background.js"
+    "scripts": ["background.js"],
+    "persistent": false
   },
-  "action": {
+  "browser_action": {
     "default_popup": "popup.html",
     "default_icon": {
       "128": "icon128.png"
@@ -15,6 +15,18 @@
   },
   "icons": {
     "128": "icon128.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ifs-queue-monitor@local",
+      "strict_min_version": "74.0"
+    }
+  },
+  "applications": {
+    "gecko": {
+      "id": "ifs-queue-monitor@local",
+      "strict_min_version": "74.0"
+    }
   },
   "content_scripts": [
     {
