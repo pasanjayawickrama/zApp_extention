@@ -13,7 +13,10 @@
 
   <div class="card">
     <div id="setup" class="setup" hidden>
-      <div class="setupTitle">Set up your queue</div>
+      <div class="setupHeader">
+        <div class="setupTitle">Set up your queue</div>
+        <button id="done" class="linkButton" type="button">Back to counts</button>
+      </div>
       <label class="label" for="topic">Topic</label>
       <input id="topic" class="input" type="text" placeholder="e.g. Manu - Manu All" autocomplete="off" />
 
@@ -27,7 +30,6 @@
 
       <div class="setupActions">
         <button id="save" class="button" type="button">Add</button>
-        <button id="done" class="linkButton" type="button">Back to counts</button>
       </div>
       <div class="hint">Saved links sync with your browser profile.</div>
       <pre id="setupError" class="error" hidden></pre>
@@ -41,15 +43,17 @@
     </div>
 
     <div id="main" hidden>
-      <div class="mainHeader">
+      <div class="setupHeader">
         <div>
-          <div class="hint">Counts by priority.</div>
+          <div class="setupTitle mainTitle">Counts by priority.</div>
         </div>
-        <button id="change" class="linkButton" type="button">Change</button>
+        <button id="change" class="linkButton" type="button">Add/Remove</button>
       </div>
       <pre id="output" class="output">Loading...</pre>
     </div>
   </div>
+
+  <div class="footer">By : PJAYLK</div>
 
   <script src="popup.js"></script>
 </body>

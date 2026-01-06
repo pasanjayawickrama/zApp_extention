@@ -357,13 +357,41 @@ function formatCountsBlock(title, counts) {
 
 function sendGraphql(body) {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: "FETCH_QUEUE_JSON", body }, (response) => resolve(response));
+    chrome.runtime.sendMessage({ type: "FETCH_QUEUE_JSON", body }, (response) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        resolve({ success: false, error: err.message || String(err) });
+        return;
+      }
+      resolve(response);
+    });
   });
 }
 
 function sendCaseCountsRequest(payload) {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: "FETCH_CASE_COUNTS", payload }, (response) => resolve(response));
+    chrome.runtime.sendMessage({ type: "FETCH_CASE_COUNTS", payload }, (response) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        resolve({ success: false, error: err.message || String(err) });
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+function sendCompareAndNotify(updates) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "COMPARE_AND_NOTIFY", updates }, (response) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        // Notification compare is best-effort; don't fail UI.
+        resolve({ success: false, error: err.message || String(err) });
+        return;
+      }
+      resolve(response);
+    });
   });
 }
 
@@ -615,6 +643,7 @@ async function run() {
   output.textContent = "Loading...";
 
   const blocks = [];
+  const notifyUpdates = [];
 
   for (const entry of currentConfig.links) {
     const parsed = parseServiceNowListLink(entry.link);
@@ -674,9 +703,14 @@ async function run() {
     }
 
     blocks.push("", formatCountsBlock(entry.topic, customCounts));
+    notifyUpdates.push({ queueId: entry.id, topic: entry.topic, counts: customCounts });
   }
 
   output.innerHTML = blocks.join("\n");
+
+  // Notify in the background (storage.local) without affecting UI.
+  // First-run is handled in the service worker: it stores but does not notify.
+  sendCompareAndNotify(notifyUpdates);
 }
 
 saveButton?.addEventListener("click", async () => {

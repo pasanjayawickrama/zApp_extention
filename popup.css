@@ -21,6 +21,7 @@ body{
   max-width: 420px;
   min-height: 320px;
   padding: 12px;
+  padding-bottom: 28px;
   background: radial-gradient(1200px 500px at 10% 0%, rgba(124, 58, 237, 0.25), transparent 60%),
               radial-gradient(900px 420px at 100% 30%, rgba(167, 139, 250, 0.18), transparent 55%),
               var(--bg);
@@ -61,6 +62,33 @@ body{
   color: var(--accent-2);
   margin-bottom: 10px;
   font-weight: 600;
+}
+
+.mainTitle{
+  margin-bottom: 0;
+}
+
+.setupHeader{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.setupHeader .setupTitle{
+  margin-bottom: 0;
+}
+
+.setupHeader .linkButton{
+  color: var(--text);
+  font-weight: 600;
+  border-color: rgba(167, 139, 250, 0.32);
+  background: rgba(124, 58, 237, 0.14);
+}
+
+.setupHeader .linkButton:hover{
+  border-color: rgba(167, 139, 250, 0.55);
+  background: rgba(124, 58, 237, 0.20);
 }
 
 .label{
@@ -187,19 +215,7 @@ body{
   background: rgba(124, 58, 237, 0.30);
 }
 
-.mainHeader{
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
 
-.mainTopic{
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent-2);
-}
 
 .linkButton{
   border: 1px solid var(--border);
@@ -244,6 +260,16 @@ body{
   margin-top: 10px;
   font-size: 11px;
   color: var(--muted);
+}
+
+.footer{
+  position: fixed;
+  right: 12px;
+  bottom: 8px;
+  font-size: 10px;
+  line-height: 1;
+  color: rgba(244, 240, 255, 0.33);
+  user-select: none;
 }
 
 .error{
