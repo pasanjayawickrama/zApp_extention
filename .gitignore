@@ -1,0 +1,5 @@
+
+# Local build/package artifacts
+dist/
+*.xpi
+*.zip
