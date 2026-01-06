@@ -1,11 +1,16 @@
 const output = document.getElementById("output");
 const setupView = document.getElementById("setup");
 const mainView = document.getElementById("main");
+const settingsView = document.getElementById("settings");
 const topicInput = document.getElementById("topic");
 const linkInput = document.getElementById("link");
 const saveButton = document.getElementById("save");
 const doneButton = document.getElementById("done");
 const changeButton = document.getElementById("change");
+const openSettingsFromSetupButton = document.getElementById("openSettingsFromSetup");
+const openSettingsFromMainButton = document.getElementById("openSettingsFromMain");
+const openSettingsFromSettingsButton = document.getElementById("openSettingsFromSettings");
+const backFromSettingsButton = document.getElementById("backFromSettings");
 const setupError = document.getElementById("setupError");
 const savedLinksEl = document.getElementById("savedLinks");
 const removeAllButton = document.getElementById("removeAll");
@@ -21,10 +26,19 @@ const PRIORITY_BUCKETS = [
 const STORAGE_KEY = "queueConfigV1";
 
 let currentConfig = null;
+let lastNonSettingsView = "main";
+
+function showSettings() {
+  setupView.hidden = true;
+  mainView.hidden = true;
+  if (settingsView) settingsView.hidden = false;
+}
 
 function showSetup(errorText) {
+  lastNonSettingsView = "setup";
   setupView.hidden = false;
   mainView.hidden = true;
+  if (settingsView) settingsView.hidden = true;
   if (typeof errorText === "string" && errorText.trim()) {
     setupError.hidden = false;
     setupError.textContent = errorText;
@@ -35,8 +49,10 @@ function showSetup(errorText) {
 }
 
 function showMain(topic) {
+  lastNonSettingsView = "main";
   setupView.hidden = true;
   mainView.hidden = false;
+  if (settingsView) settingsView.hidden = true;
 }
 
 function computeTotalCount(counts) {
@@ -751,6 +767,31 @@ changeButton?.addEventListener("click", async () => {
   currentConfig = await loadConfig();
   showSetup();
   renderSavedLinks(currentConfig);
+});
+
+openSettingsFromSetupButton?.addEventListener("click", () => {
+  showSettings();
+});
+
+openSettingsFromMainButton?.addEventListener("click", () => {
+  showSettings();
+});
+
+openSettingsFromSettingsButton?.addEventListener("click", () => {
+  showSettings();
+});
+
+backFromSettingsButton?.addEventListener("click", async () => {
+  if (lastNonSettingsView === "setup") {
+    currentConfig = currentConfig || (await loadConfig());
+    showSetup();
+    renderSavedLinks(currentConfig);
+    return;
+  }
+
+  showMain();
+  if (output) output.textContent = "Loading...";
+  run();
 });
 
 savedLinksEl?.addEventListener("click", async (e) => {

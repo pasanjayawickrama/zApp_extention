@@ -15,7 +15,10 @@
     <div id="setup" class="setup" hidden>
       <div class="setupHeader">
         <div class="setupTitle">Set up your queue</div>
-        <button id="done" class="linkButton" type="button">Back to counts</button>
+        <div class="headerActions">
+          <button id="done" class="linkButton" type="button">Back to counts</button>
+          <button id="openSettingsFromSetup" class="linkButton iconButton" type="button" aria-label="Settings" title="Settings">⚙</button>
+        </div>
       </div>
       <label class="label" for="topic">Topic</label>
       <input id="topic" class="input" type="text" placeholder="e.g. Manu - Manu All" autocomplete="off" />
@@ -47,9 +50,25 @@
         <div>
           <div class="setupTitle mainTitle">Counts by priority.</div>
         </div>
-        <button id="change" class="linkButton" type="button">Add/Remove</button>
+        <div class="headerActions">
+          <button id="change" class="linkButton" type="button">Add/Remove</button>
+          <button id="openSettingsFromMain" class="linkButton iconButton" type="button" aria-label="Settings" title="Settings">⚙</button>
+        </div>
       </div>
       <pre id="output" class="output">Loading...</pre>
+    </div>
+
+    <div id="settings" hidden>
+      <div class="setupHeader">
+        <div>
+          <div class="setupTitle mainTitle">Settings</div>
+        </div>
+        <div class="headerActions">
+          <button id="backFromSettings" class="linkButton" type="button">Back</button>
+          <button id="openSettingsFromSettings" class="linkButton iconButton" type="button" aria-label="Settings" title="Settings">⚙</button>
+        </div>
+      </div>
+      <div class="hint" style="margin-top: 10px;">No settings available yet.</div>
     </div>
   </div>
 

@@ -75,6 +75,17 @@ body{
   gap: 10px;
 }
 
+.headerActions{
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.iconButton{
+  padding: 6px 10px;
+  line-height: 1;
+}
+
 .setupHeader .setupTitle{
   margin-bottom: 0;
 }
