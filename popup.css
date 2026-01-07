@@ -7,6 +7,8 @@
   --border: rgba(244, 240, 255, 0.12);
   --accent: #7c3aed;
   --accent-2: #a78bfa;
+  --danger: #ef4444;
+  --warn: #fbbf24;
 }
 
 *{ box-sizing: border-box; }
@@ -85,6 +87,30 @@ body{
 
 #settings{
   overflow: auto;
+}
+
+.checkRow{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+  user-select: none;
+}
+
+.checkRow input[type="checkbox"]{
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-2);
+}
+
+.checkGroup{
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(0,0,0,0.14);
 }
 
 #main:not([hidden]){
@@ -234,6 +260,44 @@ body{
   padding-right: 2px;
 }
 
+/* Scrollbars: browser-provided, themed here (Chrome/Edge + Firefox). */
+.savedLinks,
+#settings,
+.output{
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-2) transparent;
+}
+
+.savedLinks::-webkit-scrollbar,
+#settings::-webkit-scrollbar,
+.output::-webkit-scrollbar{
+  width: 8px;
+  height: 8px;
+}
+
+.savedLinks::-webkit-scrollbar-track,
+#settings::-webkit-scrollbar-track,
+.output::-webkit-scrollbar-track{
+  background: transparent;
+}
+
+.savedLinks::-webkit-scrollbar-thumb,
+#settings::-webkit-scrollbar-thumb,
+.output::-webkit-scrollbar-thumb{
+  background: var(--accent-2);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.savedLinks::-webkit-scrollbar-thumb:hover,
+#settings::-webkit-scrollbar-thumb:hover,
+.output::-webkit-scrollbar-thumb:hover{
+  background: var(--accent);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
 .setup .savedLinks{
   flex: 1;
   min-height: 0;
@@ -380,6 +444,20 @@ body{
 
 .output strong{
   color: var(--accent-2);
+}
+
+.countNum{
+  font-variant-numeric: tabular-nums;
+}
+
+.countHotCritical{
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.countHotHigh{
+  color: var(--warn);
+  font-weight: 700;
 }
 
 .topicLink{

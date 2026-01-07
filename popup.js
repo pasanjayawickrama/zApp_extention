@@ -15,6 +15,15 @@ const removeAllButton = document.getElementById("removeAll");
 const refreshMinutesInput = document.getElementById("refreshMinutes");
 const refreshSecondsInput = document.getElementById("refreshSeconds");
 const saveRefreshRateButton = document.getElementById("saveRefreshRate");
+const notifyAllEnabledInput = document.getElementById("notifyAllEnabled");
+const notifyP1Input = document.getElementById("notifyP1");
+const notifyP2Input = document.getElementById("notifyP2");
+const notifyP3Input = document.getElementById("notifyP3");
+const notifyP4Input = document.getElementById("notifyP4");
+const notifyP5Input = document.getElementById("notifyP5");
+const notifyUnknownInput = document.getElementById("notifyUnknown");
+const saveNotifySettingsButton = document.getElementById("saveNotifySettings");
+const notifySettingsStatus = document.getElementById("notifySettingsStatus");
 const settingsError = document.getElementById("settingsError");
 const refreshRateStatus = document.getElementById("refreshRateStatus");
 const cardEl = document.querySelector(".card");
@@ -36,11 +45,13 @@ function makeZeroCounts() {
 
 const STORAGE_KEY = "queueConfigV1";
 const REFRESH_RATE_KEY = "refreshRateV1";
+const NOTIFY_SETTINGS_KEY = "notifySettingsV1";
 const DEFAULT_REFRESH_SECONDS = 30;
 
 let currentConfig = null;
 let lastNonSettingsView = "main";
 let refreshRateLoadedSeconds = null;
+let notifySettingsLoaded = null;
 let mainAutoRefreshTimerId = null;
 let mainAutoRefreshInFlight = false;
 let mainAutoRefreshSeconds = null;
@@ -63,6 +74,106 @@ function setRefreshRateStatus(text) {
   }
   refreshRateStatus.hidden = false;
   refreshRateStatus.textContent = t;
+}
+
+function setNotifySettingsStatus(text) {
+  if (!notifySettingsStatus) return;
+  const t = String(text || "").trim();
+  if (!t) {
+    notifySettingsStatus.hidden = true;
+    notifySettingsStatus.textContent = "";
+    return;
+  }
+  notifySettingsStatus.hidden = false;
+  notifySettingsStatus.textContent = t;
+}
+
+function normalizeNotifySettings(raw) {
+  const defaults = {
+    enabled: true,
+    priorities: {
+      "1 - Critical": true,
+      "2 - High": true,
+      "3 - Moderate": true,
+      "4 - Low": true,
+      "5 - Planning": true,
+      Unknown: true
+    }
+  };
+
+  if (!raw || typeof raw !== "object") return defaults;
+  const enabled = raw.enabled !== false;
+  const p = raw.priorities && typeof raw.priorities === "object" ? raw.priorities : {};
+  return {
+    enabled,
+    priorities: {
+      "1 - Critical": p["1 - Critical"] !== false,
+      "2 - High": p["2 - High"] !== false,
+      "3 - Moderate": p["3 - Moderate"] !== false,
+      "4 - Low": p["4 - Low"] !== false,
+      "5 - Planning": p["5 - Planning"] !== false,
+      Unknown: p.Unknown !== false
+    }
+  };
+}
+
+function readNotifySettingsFromUI() {
+  const enabled = Boolean(notifyAllEnabledInput?.checked);
+  return {
+    enabled,
+    priorities: {
+      "1 - Critical": Boolean(notifyP1Input?.checked),
+      "2 - High": Boolean(notifyP2Input?.checked),
+      "3 - Moderate": Boolean(notifyP3Input?.checked),
+      "4 - Low": Boolean(notifyP4Input?.checked),
+      "5 - Planning": Boolean(notifyP5Input?.checked),
+      Unknown: Boolean(notifyUnknownInput?.checked)
+    }
+  };
+}
+
+function applyNotifyEnabledStateToUI(masterEnabled) {
+  const disabled = !masterEnabled;
+  const inputs = [notifyP1Input, notifyP2Input, notifyP3Input, notifyP4Input, notifyP5Input, notifyUnknownInput];
+  for (const el of inputs) {
+    if (el) el.disabled = disabled;
+  }
+}
+
+function updateNotifySettingsDirtyUI() {
+  if (!saveNotifySettingsButton) return;
+  if (!notifyAllEnabledInput) return;
+
+  const current = readNotifySettingsFromUI();
+  applyNotifyEnabledStateToUI(current.enabled);
+
+  const loaded = notifySettingsLoaded ? normalizeNotifySettings(notifySettingsLoaded) : null;
+  const normalizedCurrent = normalizeNotifySettings(current);
+  const dirty = loaded ? JSON.stringify(loaded) !== JSON.stringify(normalizedCurrent) : false;
+
+  saveNotifySettingsButton.disabled = !dirty;
+  saveNotifySettingsButton.classList.toggle("buttonDirty", dirty);
+  setNotifySettingsStatus(dirty ? "Unsaved changes" : "");
+}
+
+async function loadNotifySettingsToUI() {
+  if (!notifyAllEnabledInput) return;
+  const stored = await storageGet(NOTIFY_SETTINGS_KEY);
+  const s = normalizeNotifySettings(stored);
+  notifySettingsLoaded = s;
+
+  notifyAllEnabledInput.checked = s.enabled;
+  if (notifyP1Input) notifyP1Input.checked = s.priorities["1 - Critical"] !== false;
+  if (notifyP2Input) notifyP2Input.checked = s.priorities["2 - High"] !== false;
+  if (notifyP3Input) notifyP3Input.checked = s.priorities["3 - Moderate"] !== false;
+  if (notifyP4Input) notifyP4Input.checked = s.priorities["4 - Low"] !== false;
+  if (notifyP5Input) notifyP5Input.checked = s.priorities["5 - Planning"] !== false;
+  if (notifyUnknownInput) notifyUnknownInput.checked = s.priorities.Unknown !== false;
+
+  applyNotifyEnabledStateToUI(s.enabled);
+  if (saveNotifySettingsButton) saveNotifySettingsButton.disabled = true;
+  if (saveNotifySettingsButton) saveNotifySettingsButton.classList.remove("buttonDirty");
+  setNotifySettingsStatus("");
 }
 
 function getRefreshRateSecondsFromInputs() {
@@ -212,6 +323,18 @@ function setMainLoading(isLoading, { statusText } = {}) {
   } catch {
     setMainStatus("Updated");
   }
+}
+
+function showLoginRequiredMessage() {
+  const msg = [
+    "Login required.",
+    "",
+    "1) Open https://support.ifs.com in a tab",
+    "2) Sign in",
+    "3) Re-open this popup"
+  ].join("\n");
+  if (output) output.textContent = msg;
+  setMainLoading(false, { statusText: "Login required" });
 }
 
 function clampSeconds(seconds) {
@@ -622,7 +745,16 @@ function formatCountsBlock(title, counts, linkUrl) {
 
   const lines = [header];
   for (const bucket of PRIORITY_BUCKETS) {
-    lines.push(`${bucket} : ${counts[bucket]}`);
+    const n = Number(counts?.[bucket] ?? 0);
+    const isHot = Number.isFinite(n) && n > 0;
+    const cls =
+      isHot && bucket === "1 - Critical"
+        ? "countHotCritical"
+        : isHot && bucket === "2 - High"
+          ? "countHotHigh"
+          : "";
+
+    lines.push(`${bucket} : <span class="countNum ${cls}">${Number.isFinite(n) ? n : 0}</span>`);
   }
   if (counts.Unknown) lines.push(`Unknown : ${counts.Unknown}`);
   return lines.join("\n");
@@ -920,16 +1052,7 @@ async function run(options = {}) {
       // eslint-disable-next-line no-await-in-loop
       const agentCountsResp = await fetchAgentListCounts(parsed.listId, parsed.tinyId);
       if (agentCountsResp.needsLogin) {
-        output.textContent = JSON.stringify(
-          {
-            error: "Please log in to https://support.ifs.com",
-            hint: "Open support.ifs.com in a tab, sign in, then reopen this popup.",
-            details: agentCountsResp.http || undefined
-          },
-          null,
-          2
-        );
-        if (shouldMarkLoading) setMainLoading(false, { statusText: "Login required" });
+        showLoginRequiredMessage();
         return;
       }
       if (!agentCountsResp.success) {
@@ -949,16 +1072,7 @@ async function run(options = {}) {
       }
 
       if (countsResponse.needsLogin) {
-        output.textContent = JSON.stringify(
-          {
-            error: "Please log in to https://support.ifs.com",
-            hint: "Open support.ifs.com in a tab, sign in, then reopen this popup.",
-            details: countsResponse.http || undefined
-          },
-          null,
-          2
-        );
-        if (shouldMarkLoading) setMainLoading(false, { statusText: "Login required" });
+        showLoginRequiredMessage();
         return;
       }
 
@@ -1045,6 +1159,7 @@ openSettingsFromMainButton?.addEventListener("click", () => {
   showSettings();
   showSettingsError("");
   loadRefreshRateToUI();
+  loadNotifySettingsToUI();
 });
 
 refreshMinutesInput?.addEventListener("input", () => {
@@ -1096,6 +1211,36 @@ saveRefreshRateButton?.addEventListener("click", async () => {
     if (typeof refreshRateLoadedSeconds === "number" && currentClamped === refreshRateLoadedSeconds) {
       setRefreshRateStatus("");
     }
+  }, 1200);
+});
+
+const notifyInputs = [
+  notifyAllEnabledInput,
+  notifyP1Input,
+  notifyP2Input,
+  notifyP3Input,
+  notifyP4Input,
+  notifyP5Input,
+  notifyUnknownInput
+].filter(Boolean);
+
+for (const el of notifyInputs) {
+  el.addEventListener("change", () => {
+    updateNotifySettingsDirtyUI();
+  });
+}
+
+saveNotifySettingsButton?.addEventListener("click", async () => {
+  showSettingsError("");
+  const s = normalizeNotifySettings(readNotifySettingsFromUI());
+  await storageSet({ [NOTIFY_SETTINGS_KEY]: s });
+  notifySettingsLoaded = s;
+  updateNotifySettingsDirtyUI();
+  setNotifySettingsStatus("Saved");
+  setTimeout(() => {
+    const current = normalizeNotifySettings(readNotifySettingsFromUI());
+    const loaded = notifySettingsLoaded ? normalizeNotifySettings(notifySettingsLoaded) : null;
+    if (loaded && JSON.stringify(loaded) === JSON.stringify(current)) setNotifySettingsStatus("");
   }, 1200);
 });
 

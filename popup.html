@@ -82,6 +82,29 @@
       <button id="saveRefreshRate" class="button" type="button">Save</button>
       <div id="refreshRateStatus" class="hint" hidden></div>
       <div class="hint">Tip: some browsers may clamp alarms to ~1 minute.</div>
+
+      <div class="divider"></div>
+
+      <label class="label">Notifications</label>
+
+      <label class="checkRow" for="notifyAllEnabled">
+        <input id="notifyAllEnabled" type="checkbox" />
+        <span>Enable notifications</span>
+      </label>
+
+      <div class="hint" style="margin-top: 6px;">Choose which priorities can trigger notifications.</div>
+
+      <div class="checkGroup" role="group" aria-label="Notification priorities">
+        <label class="checkRow" for="notifyP1"><input id="notifyP1" type="checkbox" /> <span>1 - Critical</span></label>
+        <label class="checkRow" for="notifyP2"><input id="notifyP2" type="checkbox" /> <span>2 - High</span></label>
+        <label class="checkRow" for="notifyP3"><input id="notifyP3" type="checkbox" /> <span>3 - Moderate</span></label>
+        <label class="checkRow" for="notifyP4"><input id="notifyP4" type="checkbox" /> <span>4 - Low</span></label>
+        <label class="checkRow" for="notifyP5"><input id="notifyP5" type="checkbox" /> <span>5 - Planning</span></label>
+        <label class="checkRow" for="notifyUnknown"><input id="notifyUnknown" type="checkbox" /> <span>Unknown / Other</span></label>
+      </div>
+
+      <button id="saveNotifySettings" class="button" type="button">Save</button>
+      <div id="notifySettingsStatus" class="hint" hidden></div>
       <pre id="settingsError" class="error" hidden></pre>
     </div>
   </div>
