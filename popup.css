@@ -502,6 +502,41 @@ body{
   padding-right: 2px;
 }
 
+/* Skeleton placeholders for initial loading */
+.skeleton{
+  position: relative;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.skeleton::after{
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  animation: skeletonShimmer 1.1s linear infinite;
+}
+
+@keyframes skeletonShimmer{
+  100% { transform: translateX(100%); }
+}
+
+.skeleton-num{
+  display: inline-block;
+  width: 18px;
+  height: 10px;
+  vertical-align: middle;
+}
+
+.skeleton-pill{
+  display: inline-block;
+  width: 26px;
+  height: 16px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
 .output.isLoading{
   opacity: 0.86;
   display: flex;
@@ -513,6 +548,26 @@ body{
 
 .mainStatus{
   margin: 0 0 6px 0;
+}
+
+/* Subtle inline loading indicator near the header status */
+.mainStatus.isRefreshing::after{
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 6px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: color-mix(in srgb, var(--accent-2) 85%, transparent);
+  border-right-color: color-mix(in srgb, var(--accent-2) 65%, transparent);
+  animation: mainStatusSpin 0.8s linear infinite;
+  vertical-align: middle;
+  opacity: 0.95;
+}
+
+@keyframes mainStatusSpin{
+  to{ transform: rotate(360deg); }
 }
 
 .output strong{
