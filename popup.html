@@ -16,8 +16,7 @@
       <div class="setupHeader">
         <div class="setupTitle">Set up your queue</div>
         <div class="headerActions">
-          <button id="done" class="linkButton" type="button">Back to counts</button>
-          <button id="openSettingsFromSetup" class="linkButton iconButton" type="button" aria-label="Settings" title="Settings">⚙</button>
+          <button id="done" class="linkButton" type="button">Back</button>
         </div>
       </div>
       <label class="label" for="topic">Topic</label>
@@ -27,7 +26,7 @@
       <textarea
         id="link"
         class="textarea"
-        rows="4"
+        rows="3"
         placeholder="Paste a support.ifs.com list link that contains sysparm_query"
       ></textarea>
 
@@ -49,13 +48,14 @@
       <div class="setupHeader">
         <div>
           <div class="setupTitle mainTitle">Counts by priority.</div>
+          <div id="mainStatus" class="hint mainStatus" aria-live="polite" style="margin-top: 4px;"></div>
         </div>
         <div class="headerActions">
-          <button id="change" class="linkButton" type="button">Add/Remove</button>
+          <button id="change" class="linkButton" type="button">Edit Queue</button>
           <button id="openSettingsFromMain" class="linkButton iconButton" type="button" aria-label="Settings" title="Settings">⚙</button>
         </div>
       </div>
-      <pre id="output" class="output">Loading...</pre>
+      <pre id="output" class="output"></pre>
     </div>
 
     <div id="settings" hidden>
@@ -65,10 +65,24 @@
         </div>
         <div class="headerActions">
           <button id="backFromSettings" class="linkButton" type="button">Back</button>
-          <button id="openSettingsFromSettings" class="linkButton iconButton" type="button" aria-label="Settings" title="Settings">⚙</button>
         </div>
       </div>
-      <div class="hint" style="margin-top: 10px;">No settings available yet.</div>
+
+      <label class="label" for="refreshMinutes">Notification refresh rate</label>
+      <div class="twoCol" style="margin-top: 6px;">
+        <div class="field">
+          <label class="label" for="refreshMinutes" style="margin: 0 0 6px;">Minutes</label>
+          <input id="refreshMinutes" class="input" type="number" min="0" step="1" placeholder="0" inputmode="numeric" />
+        </div>
+        <div class="field">
+          <label class="label" for="refreshSeconds" style="margin: 0 0 6px;">Seconds</label>
+          <input id="refreshSeconds" class="input" type="number" min="0" max="59" step="1" placeholder="30" inputmode="numeric" />
+        </div>
+      </div>
+      <button id="saveRefreshRate" class="button" type="button">Save</button>
+      <div id="refreshRateStatus" class="hint" hidden></div>
+      <div class="hint">Tip: some browsers may clamp alarms to ~1 minute.</div>
+      <pre id="settingsError" class="error" hidden></pre>
     </div>
   </div>
 

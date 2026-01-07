@@ -7,13 +7,18 @@ const linkInput = document.getElementById("link");
 const saveButton = document.getElementById("save");
 const doneButton = document.getElementById("done");
 const changeButton = document.getElementById("change");
-const openSettingsFromSetupButton = document.getElementById("openSettingsFromSetup");
 const openSettingsFromMainButton = document.getElementById("openSettingsFromMain");
-const openSettingsFromSettingsButton = document.getElementById("openSettingsFromSettings");
 const backFromSettingsButton = document.getElementById("backFromSettings");
 const setupError = document.getElementById("setupError");
 const savedLinksEl = document.getElementById("savedLinks");
 const removeAllButton = document.getElementById("removeAll");
+const refreshMinutesInput = document.getElementById("refreshMinutes");
+const refreshSecondsInput = document.getElementById("refreshSeconds");
+const saveRefreshRateButton = document.getElementById("saveRefreshRate");
+const settingsError = document.getElementById("settingsError");
+const refreshRateStatus = document.getElementById("refreshRateStatus");
+const cardEl = document.querySelector(".card");
+const mainStatusEl = document.getElementById("mainStatus");
 
 const PRIORITY_BUCKETS = [
   "1 - Critical",
@@ -23,19 +28,144 @@ const PRIORITY_BUCKETS = [
   "5 - Planning"
 ];
 
+function makeZeroCounts() {
+  const out = { Unknown: 0 };
+  for (const bucket of PRIORITY_BUCKETS) out[bucket] = 0;
+  return out;
+}
+
 const STORAGE_KEY = "queueConfigV1";
+const REFRESH_RATE_KEY = "refreshRateV1";
+const DEFAULT_REFRESH_SECONDS = 30;
 
 let currentConfig = null;
 let lastNonSettingsView = "main";
+let refreshRateLoadedSeconds = null;
+let mainAutoRefreshTimerId = null;
+let mainAutoRefreshInFlight = false;
+let mainAutoRefreshSeconds = null;
+
+function setCardMode(mode) {
+  if (!cardEl) return;
+  cardEl.classList.remove("mode-main", "mode-setup", "mode-settings");
+  if (mode === "main") cardEl.classList.add("mode-main");
+  else if (mode === "setup") cardEl.classList.add("mode-setup");
+  else if (mode === "settings") cardEl.classList.add("mode-settings");
+}
+
+function setRefreshRateStatus(text) {
+  if (!refreshRateStatus) return;
+  const t = String(text || "").trim();
+  if (!t) {
+    refreshRateStatus.hidden = true;
+    refreshRateStatus.textContent = "";
+    return;
+  }
+  refreshRateStatus.hidden = false;
+  refreshRateStatus.textContent = t;
+}
+
+function getRefreshRateSecondsFromInputs() {
+  const minutes = clampInt(refreshMinutesInput?.value, { min: 0, max: 1440 });
+  const seconds = clampInt(refreshSecondsInput?.value, { min: 0, max: 1_000_000 });
+  const totalSeconds = minutes * 60 + seconds;
+  if (!totalSeconds) return { totalSeconds: 0, clampedSeconds: 0 };
+  const clampedSeconds = Math.max(5, Math.min(3600, totalSeconds));
+  return { totalSeconds, clampedSeconds };
+}
+
+function updateRefreshRateDirtyUI() {
+  if (!saveRefreshRateButton) return;
+
+  const loaded = typeof refreshRateLoadedSeconds === "number" ? refreshRateLoadedSeconds : null;
+  const { totalSeconds, clampedSeconds } = getRefreshRateSecondsFromInputs();
+  const dirty = loaded !== null && clampedSeconds !== 0 && clampedSeconds !== loaded;
+  const canSave = dirty && totalSeconds > 0;
+
+  saveRefreshRateButton.disabled = !canSave;
+  saveRefreshRateButton.classList.toggle("buttonDirty", dirty);
+  setRefreshRateStatus(dirty ? "Unsaved changes" : "");
+}
 
 function showSettings() {
+  setCardMode("settings");
   setupView.hidden = true;
   mainView.hidden = true;
   if (settingsView) settingsView.hidden = false;
+  stopMainAutoRefresh();
+}
+
+function showSettingsError(errorText) {
+  if (!settingsError) return;
+  if (typeof errorText === "string" && errorText.trim()) {
+    settingsError.hidden = false;
+    settingsError.textContent = errorText;
+  } else {
+    settingsError.hidden = true;
+    settingsError.textContent = "";
+  }
+}
+
+function clampInt(value, { min = 0, max = 1_000_000 } = {}) {
+  const n = Number.parseInt(String(value ?? "0"), 10);
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
+function normalizeRefreshRateInputs() {
+  if (!refreshMinutesInput || !refreshSecondsInput) return;
+
+  const minutesRaw = clampInt(refreshMinutesInput.value, { min: 0, max: 1440 });
+  const secondsRaw = clampInt(refreshSecondsInput.value, { min: 0, max: 1_000_000 });
+
+  if (secondsRaw < 60) return;
+
+  const extraMinutes = Math.floor(secondsRaw / 60);
+  const seconds = secondsRaw % 60;
+  const minutes = Math.min(1440, minutesRaw + extraMinutes);
+
+  const nextMinutes = String(minutes);
+  const nextSeconds = String(seconds);
+  if (refreshMinutesInput.value !== nextMinutes) refreshMinutesInput.value = nextMinutes;
+  if (refreshSecondsInput.value !== nextSeconds) refreshSecondsInput.value = nextSeconds;
+}
+
+async function loadRefreshRateToUI() {
+  if (!refreshMinutesInput || !refreshSecondsInput) return;
+  const stored = await storageGet(REFRESH_RATE_KEY);
+  const totalSecondsRaw = typeof stored === "number" ? stored : Number.parseInt(String(stored ?? ""), 10);
+  const totalSeconds =
+    Number.isFinite(totalSecondsRaw) && totalSecondsRaw > 0
+      ? Math.max(5, Math.min(3600, totalSecondsRaw))
+      : 30;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  refreshMinutesInput.value = String(minutes);
+  refreshSecondsInput.value = String(seconds);
+  refreshRateLoadedSeconds = totalSeconds;
+
+  if (saveRefreshRateButton) saveRefreshRateButton.disabled = true;
+  if (saveRefreshRateButton) saveRefreshRateButton.classList.remove("buttonDirty");
+  setRefreshRateStatus("");
+}
+
+function sendSetRefreshRate(totalSeconds) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "SET_REFRESH_RATE", totalSeconds }, (response) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        resolve({ success: false, error: err.message || String(err) });
+        return;
+      }
+      resolve(response);
+    });
+  });
 }
 
 function showSetup(errorText) {
   lastNonSettingsView = "setup";
+  stopMainAutoRefresh();
+  setCardMode("setup");
   setupView.hidden = false;
   mainView.hidden = true;
   if (settingsView) settingsView.hidden = true;
@@ -50,10 +180,85 @@ function showSetup(errorText) {
 
 function showMain(topic) {
   lastNonSettingsView = "main";
+  setCardMode("main");
   setupView.hidden = true;
   mainView.hidden = false;
   if (settingsView) settingsView.hidden = true;
+  startMainAutoRefresh();
 }
+
+function setMainStatus(text) {
+  if (!mainStatusEl) return;
+  mainStatusEl.textContent = String(text || "");
+}
+
+function setMainLoading(isLoading, { statusText } = {}) {
+  if (output) output.classList.toggle("isLoading", Boolean(isLoading));
+  if (isLoading) {
+    // Keep header clean; show loading in the main content area.
+    setMainStatus("");
+    if (output) output.textContent = statusText || "Loading counts…";
+    return;
+  }
+
+  if (typeof statusText === "string") {
+    setMainStatus(statusText);
+    return;
+  }
+
+  try {
+    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setMainStatus(`Updated ${time}`);
+  } catch {
+    setMainStatus("Updated");
+  }
+}
+
+function clampSeconds(seconds) {
+  const n = typeof seconds === "number" ? seconds : Number.parseInt(String(seconds ?? ""), 10);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_REFRESH_SECONDS;
+  return Math.max(5, Math.min(3600, n));
+}
+
+async function getRefreshRateSeconds() {
+  const stored = await storageGet(REFRESH_RATE_KEY);
+  return clampSeconds(stored);
+}
+
+function stopMainAutoRefresh() {
+  if (mainAutoRefreshTimerId) {
+    clearInterval(mainAutoRefreshTimerId);
+    mainAutoRefreshTimerId = null;
+  }
+  mainAutoRefreshSeconds = null;
+}
+
+async function startMainAutoRefresh() {
+  if (!mainView || mainView.hidden) return;
+  const seconds = await getRefreshRateSeconds();
+  if (mainAutoRefreshTimerId && mainAutoRefreshSeconds === seconds) return;
+
+  stopMainAutoRefresh();
+  mainAutoRefreshSeconds = seconds;
+
+  mainAutoRefreshTimerId = setInterval(async () => {
+    if (!mainView || mainView.hidden) return;
+    if (mainAutoRefreshInFlight) return;
+    mainAutoRefreshInFlight = true;
+    try {
+      await run({ skipNotify: true });
+    } finally {
+      mainAutoRefreshInFlight = false;
+    }
+  }, seconds * 1000);
+}
+
+chrome.storage?.onChanged?.addListener?.((changes, areaName) => {
+  if (areaName !== "sync") return;
+  if (!changes || !Object.prototype.hasOwnProperty.call(changes, REFRESH_RATE_KEY)) return;
+  if (!mainView || mainView.hidden) return;
+  startMainAutoRefresh();
+});
 
 function computeTotalCount(counts) {
   if (!counts || typeof counts !== "object") return 0;
@@ -93,7 +298,8 @@ function normalizeConfig(raw) {
         .map((x) => ({
           id: String(x.id || "").trim() || String(Date.now()),
           topic: String(x.topic || "").trim(),
-          link: String(x.link || "").trim()
+          link: String(x.link || "").trim(),
+          notifyEnabled: x.notifyEnabled !== false
         }))
         .filter((x) => x.topic && x.link)
     };
@@ -102,7 +308,14 @@ function normalizeConfig(raw) {
   // Legacy format: { topic, link }
   if (raw.topic && raw.link) {
     return {
-      links: [{ id: "legacy", topic: String(raw.topic).trim(), link: String(raw.link).trim() }]
+      links: [
+        {
+          id: "legacy",
+          topic: String(raw.topic).trim(),
+          link: String(raw.link).trim(),
+          notifyEnabled: true
+        }
+      ]
     };
   }
 
@@ -140,15 +353,30 @@ function renderSavedLinks(cfg) {
 
   savedLinksEl.innerHTML = links
     .map(
-      (l) => `
-        <div class="savedLinkRow" data-id="${esc(l.id)}">
+      (l) => {
+        const notifyOn = l?.notifyEnabled !== false;
+        const bell = notifyOn ? "\uD83D\uDD14" : "\uD83D\uDD15";
+        const bellTitle = notifyOn ? "Notifications on" : "Notifications off";
+        return `
+        <div class="savedLinkRow ${notifyOn ? "" : "savedLinkRowDisabled"}" data-id="${esc(l.id)}">
           <div class="savedLinkText">
             <div class="savedLinkTopic">${esc(l.topic)}</div>
             <div class="savedLinkUrl">${esc(l.link)}</div>
           </div>
-          <button class="removeButton" type="button" data-remove="${esc(l.id)}">Remove</button>
+          <div class="savedLinkActions">
+            <button
+              class="bellButton"
+              type="button"
+              data-toggle-notify="${esc(l.id)}"
+              data-state="${notifyOn ? "on" : "off"}"
+              aria-label="Toggle notifications"
+              title="${esc(bellTitle)}"
+            >${bell}</button>
+            <button class="removeButton" type="button" data-remove="${esc(l.id)}">Remove</button>
+          </div>
         </div>
-      `
+      `;
+      }
     )
     .join("\n");
 }
@@ -160,6 +388,19 @@ function safeJsonParse(value) {
   } catch {
     return null;
   }
+}
+
+function escapeHtml(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;");
+}
+
+function escapeAttr(text) {
+  // For simple attribute contexts like href/title.
+  return escapeHtml(text).replace(/'/g, "&#39;");
 }
 
 function normalizeHostname(hostname) {
@@ -365,8 +606,21 @@ function computePriorityCountsFromListLayout(graphqlResponseData) {
   return counts;
 }
 
-function formatCountsBlock(title, counts) {
-  const lines = [`<strong>${title} - ${computeTotalCount(counts)}</strong>`];
+function formatCountsBlock(title, counts, linkUrl) {
+  const total = computeTotalCount(counts);
+  const safeTitle = escapeHtml(title);
+
+  const safeLink = (() => {
+    const url = tryParseUrl(String(linkUrl || "").trim());
+    if (!url) return null;
+    return url.toString();
+  })();
+
+  const header = safeLink
+    ? `<strong><a class="topicLink" href="${escapeAttr(safeLink)}" target="_blank" rel="noreferrer">${safeTitle} - ${total}</a></strong>`
+    : `<strong>${safeTitle} - ${total}</strong>`;
+
+  const lines = [header];
   for (const bucket of PRIORITY_BUCKETS) {
     lines.push(`${bucket} : ${counts[bucket]}`);
   }
@@ -631,20 +885,24 @@ function buildGraphqlBody(condition) {
   };
 }
 
-async function run() {
-  currentConfig = await loadConfig();
+async function run(options = {}) {
+  const { skipNotify = false } = options || {};
+  const shouldMarkLoading = true;
+  setMainLoading(true);
 
-  // Always render setup list if we are on setup view.
-  renderSavedLinks(currentConfig);
+  try {
+    currentConfig = await loadConfig();
 
-  // If user has no links yet, start on setup.
-  if (!currentConfig.links.length) {
-    showSetup();
-    return;
-  }
+    // Always render setup list if we are on setup view.
+    renderSavedLinks(currentConfig);
 
-  showMain();
-  output.textContent = "Loading...";
+    // If user has no links yet, start on setup.
+    if (!currentConfig.links.length) {
+      showSetup();
+      return;
+    }
+
+    showMain();
 
   const blocks = [];
   const notifyUpdates = [];
@@ -652,7 +910,7 @@ async function run() {
   for (const entry of currentConfig.links) {
     const parsed = parseServiceNowListLink(entry.link);
     if (parsed.error) {
-      blocks.push("", `<strong>${entry.topic} - 0</strong>`, parsed.error);
+      blocks.push("", formatCountsBlock(entry.topic, makeZeroCounts(), entry.link), parsed.error);
       continue;
     }
 
@@ -671,6 +929,7 @@ async function run() {
           null,
           2
         );
+        if (shouldMarkLoading) setMainLoading(false, { statusText: "Login required" });
         return;
       }
       if (!agentCountsResp.success) {
@@ -699,6 +958,7 @@ async function run() {
           null,
           2
         );
+        if (shouldMarkLoading) setMainLoading(false, { statusText: "Login required" });
         return;
       }
 
@@ -710,15 +970,28 @@ async function run() {
       customCounts = countsResponse.counts;
     }
 
-    blocks.push("", formatCountsBlock(displayTopic, customCounts));
-    notifyUpdates.push({ queueId: entry.id, topic: displayTopic, counts: customCounts });
+    blocks.push("", formatCountsBlock(displayTopic, customCounts, entry.link));
+    if (entry.notifyEnabled !== false) {
+      notifyUpdates.push({ queueId: entry.id, topic: displayTopic, counts: customCounts });
+    }
   }
 
   output.innerHTML = blocks.join("\n");
 
   // Notify in the background (storage.local) without affecting UI.
   // First-run is handled in the service worker: it stores but does not notify.
-  sendCompareAndNotify(notifyUpdates);
+  // When the popup is kept open, we auto-refresh counts but avoid driving notifications from the popup.
+    if (!skipNotify) {
+      sendCompareAndNotify(notifyUpdates);
+    }
+
+    if (shouldMarkLoading) setMainLoading(false);
+  } finally {
+    // If we returned early, ensure we don't leave the UI looking "stuck".
+    if (shouldMarkLoading && output?.classList?.contains?.("isLoading")) {
+      output.classList.remove("isLoading");
+    }
+  }
 }
 
 saveButton?.addEventListener("click", async () => {
@@ -741,7 +1014,7 @@ saveButton?.addEventListener("click", async () => {
 
   const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const next = {
-    links: [...(currentConfig.links || []), { id, topic, link }]
+    links: [...(currentConfig.links || []), { id, topic, link, notifyEnabled: true }]
   };
 
   await saveConfig(next);
@@ -759,7 +1032,6 @@ doneButton?.addEventListener("click", async () => {
     return;
   }
   showMain();
-  output.textContent = "Loading...";
   run();
 });
 
@@ -769,16 +1041,20 @@ changeButton?.addEventListener("click", async () => {
   renderSavedLinks(currentConfig);
 });
 
-openSettingsFromSetupButton?.addEventListener("click", () => {
-  showSettings();
-});
-
 openSettingsFromMainButton?.addEventListener("click", () => {
   showSettings();
+  showSettingsError("");
+  loadRefreshRateToUI();
 });
 
-openSettingsFromSettingsButton?.addEventListener("click", () => {
-  showSettings();
+refreshMinutesInput?.addEventListener("input", () => {
+  normalizeRefreshRateInputs();
+  updateRefreshRateDirtyUI();
+});
+
+refreshSecondsInput?.addEventListener("input", () => {
+  normalizeRefreshRateInputs();
+  updateRefreshRateDirtyUI();
 });
 
 backFromSettingsButton?.addEventListener("click", async () => {
@@ -790,12 +1066,56 @@ backFromSettingsButton?.addEventListener("click", async () => {
   }
 
   showMain();
-  if (output) output.textContent = "Loading...";
   run();
+});
+
+saveRefreshRateButton?.addEventListener("click", async () => {
+  showSettingsError("");
+
+  const { totalSeconds, clampedSeconds } = getRefreshRateSecondsFromInputs();
+
+  if (!totalSeconds) {
+    showSettingsError("Please set a refresh rate greater than 0 seconds.");
+    return;
+  }
+
+  await storageSet({ [REFRESH_RATE_KEY]: clampedSeconds });
+
+  const resp = await sendSetRefreshRate(clampedSeconds);
+  if (!resp?.success) {
+    showSettingsError(resp?.error || "Failed to apply refresh rate.");
+    return;
+  }
+
+  refreshRateLoadedSeconds = clampedSeconds;
+  updateRefreshRateDirtyUI();
+  setRefreshRateStatus("Saved");
+  setTimeout(() => {
+    // Only clear if nothing changed since save.
+    const { clampedSeconds: currentClamped } = getRefreshRateSecondsFromInputs();
+    if (typeof refreshRateLoadedSeconds === "number" && currentClamped === refreshRateLoadedSeconds) {
+      setRefreshRateStatus("");
+    }
+  }, 1200);
 });
 
 savedLinksEl?.addEventListener("click", async (e) => {
   const btn = e?.target;
+
+  const toggleId = btn?.getAttribute?.("data-toggle-notify");
+  if (toggleId) {
+    currentConfig = currentConfig || (await loadConfig());
+    const next = {
+      links: (currentConfig.links || []).map((l) =>
+        l.id === toggleId ? { ...l, notifyEnabled: l.notifyEnabled === false } : l
+      )
+    };
+    await saveConfig(next);
+    showSetup();
+    renderSavedLinks(next);
+    return;
+  }
+
   const id = btn?.getAttribute?.("data-remove");
   if (!id) return;
   currentConfig = currentConfig || (await loadConfig());

@@ -6,10 +6,12 @@
 const PREV_COUNTS_KEY = "prevCountsV1";
 // Stores user-configured queues in chrome.storage.sync.
 const QUEUE_CONFIG_KEY = "queueConfigV1";
+// Stores refresh rate in seconds in chrome.storage.sync.
+const REFRESH_RATE_KEY = "refreshRateV1";
 // Alarm name for periodic refresh.
 const REFRESH_ALARM_NAME = "ifsQueueRefreshV1";
-// For testing: 30 seconds. Note Chrome may clamp alarms to >= 1 minute.
-const REFRESH_PERIOD_MINUTES = 0.5;
+// Default: 30 seconds. Note browsers may clamp alarms to >= ~1 minute.
+const DEFAULT_REFRESH_SECONDS = 30;
 
 const PRIORITY_BUCKETS = [
   "1 - Critical",
@@ -135,7 +137,8 @@ function normalizeQueueConfig(raw) {
         .map((x) => ({
           id: String(x.id || "").trim(),
           topic: String(x.topic || "").trim(),
-          link: String(x.link || "").trim()
+          link: String(x.link || "").trim(),
+          notifyEnabled: x.notifyEnabled !== false
         }))
         .filter((x) => x.id && x.topic && x.link)
     };
@@ -143,7 +146,14 @@ function normalizeQueueConfig(raw) {
   // Legacy {topic, link}
   if (raw.topic && raw.link) {
     return {
-      links: [{ id: "legacy", topic: String(raw.topic).trim(), link: String(raw.link).trim() }]
+      links: [
+        {
+          id: "legacy",
+          topic: String(raw.topic).trim(),
+          link: String(raw.link).trim(),
+          notifyEnabled: true
+        }
+      ]
     };
   }
   return { links: [] };
@@ -153,6 +163,20 @@ function loadQueueConfig() {
   return new Promise((resolve) => {
     chrome.storage.sync.get([QUEUE_CONFIG_KEY], (res) => {
       resolve(normalizeQueueConfig(res?.[QUEUE_CONFIG_KEY]));
+    });
+  });
+}
+
+function loadRefreshRateSeconds() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get([REFRESH_RATE_KEY], (res) => {
+      const raw = res?.[REFRESH_RATE_KEY];
+      const n = typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10);
+      if (!Number.isFinite(n) || n <= 0) {
+        resolve(DEFAULT_REFRESH_SECONDS);
+        return;
+      }
+      resolve(Math.max(5, Math.min(3600, n)));
     });
   });
 }
@@ -479,6 +503,7 @@ async function refreshAndNotifyAllQueues() {
 
   const updates = [];
   for (const entry of cfg.links) {
+    if (entry?.notifyEnabled === false) continue;
     const parsed = parseServiceNowListLink(entry.link);
     if (parsed.listId && parsed.tinyId) {
       // eslint-disable-next-line no-await-in-loop
@@ -496,8 +521,9 @@ async function refreshAndNotifyAllQueues() {
   if (updates.length) await compareAndNotify(updates);
 }
 
-function ensureRefreshAlarm() {
-  chrome.alarms.create(REFRESH_ALARM_NAME, { periodInMinutes: REFRESH_PERIOD_MINUTES });
+async function ensureRefreshAlarm() {
+  const seconds = await loadRefreshRateSeconds();
+  chrome.alarms.create(REFRESH_ALARM_NAME, { periodInMinutes: seconds / 60 });
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -603,6 +629,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       else sendResponse({ success: true, notified: false, reason: "no-increases" });
     })().catch((err) => sendResponse({ success: false, error: err?.toString?.() || String(err) }));
 
+    return true;
+  }
+
+  if (msg.type === "SET_REFRESH_RATE") {
+    (async () => {
+      const raw = msg?.totalSeconds;
+      const n = typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10);
+      if (!Number.isFinite(n) || n <= 0) {
+        sendResponse({ success: false, error: "Invalid refresh rate" });
+        return;
+      }
+      const clamped = Math.max(5, Math.min(3600, n));
+      await new Promise((resolve) => {
+        chrome.storage.sync.set({ [REFRESH_RATE_KEY]: clamped }, () => resolve());
+      });
+      await ensureRefreshAlarm();
+      sendResponse({ success: true, seconds: clamped });
+    })();
     return true;
   }
 

@@ -11,15 +11,21 @@
 
 *{ box-sizing: border-box; }
 
+[hidden]{
+  display: none !important;
+}
+
 html, body{
   margin: 0;
   padding: 0;
+  overflow: hidden;
 }
 
 body{
   width: 420px;
   max-width: 420px;
   min-height: 320px;
+  height: 560px;
   padding: 12px;
   padding-bottom: 28px;
   background: radial-gradient(1200px 500px at 10% 0%, rgba(124, 58, 237, 0.25), transparent 60%),
@@ -27,6 +33,8 @@ body{
               var(--bg);
   color: var(--text);
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
 }
 
 .header{
@@ -50,11 +58,47 @@ body{
 }
 
 .card{
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  overflow: hidden;
+}
+
+.setup,
+#main,
+#settings{
+  height: 100%;
+  min-height: 0;
+}
+
+.setup{
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#settings{
+  overflow: auto;
+}
+
+#main:not([hidden]){
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Slight UX hint: main screen gets a tiny accent glow */
+.card.mode-main{
+  border-color: rgba(167, 139, 250, 0.28);
+  box-shadow:
+    0 8px 24px rgba(0,0,0,0.35),
+    0 0 0 1px rgba(124, 58, 237, 0.12) inset;
 }
 
 .setupTitle{
@@ -124,7 +168,7 @@ body{
 
 .textarea{
   resize: vertical;
-  min-height: 86px;
+  min-height: 64px;
 }
 
 .input:focus,
@@ -145,10 +189,31 @@ body{
   cursor: pointer;
 }
 
+.button:disabled{
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.buttonDirty{
+  border-color: rgba(167, 139, 250, 0.55);
+  background: rgba(124, 58, 237, 0.30);
+}
+
 .setupActions{
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.twoCol{
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.twoCol .field{
+  flex: 1;
+  min-width: 0;
 }
 
 .setupActions .button{
@@ -169,6 +234,12 @@ body{
   padding-right: 2px;
 }
 
+.setup .savedLinks{
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
 .savedLinksHeader{
   display: flex;
   align-items: center;
@@ -186,6 +257,41 @@ body{
   border: 1px solid var(--border);
   border-radius: 12px;
   background: rgba(0,0,0,0.14);
+}
+
+.savedLinkRowDisabled{
+  opacity: 0.72;
+}
+
+.savedLinkActions{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.bellButton{
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.bellButton[data-state="on"]{
+  color: var(--text);
+  border-color: rgba(167, 139, 250, 0.32);
+  background: rgba(124, 58, 237, 0.14);
+}
+
+.bellButton:hover{
+  color: var(--text);
+  border-color: rgba(244, 240, 255, 0.22);
 }
 
 .savedLinkText{
@@ -252,13 +358,43 @@ body{
   font-size: 12.5px;
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
-  max-height: 420px;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
   padding-right: 2px;
 }
 
+.output.isLoading{
+  opacity: 0.86;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: normal;
+}
+
+.mainStatus{
+  margin: 0;
+}
+
 .output strong{
   color: var(--accent-2);
+}
+
+.topicLink{
+  color: inherit;
+  text-decoration: none;
+}
+
+.topicLink:hover{
+  text-decoration: underline;
+}
+
+.topicLink:focus{
+  outline: 1px solid rgba(167, 139, 250, 0.45);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .divider{
