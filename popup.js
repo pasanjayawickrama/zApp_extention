@@ -407,6 +407,53 @@ function storageSet(obj) {
   });
 }
 
+// Debounced writers to reduce storage.sync write frequency
+let saveConfigPending = null;
+let saveConfigTimerId = null;
+function scheduleSaveConfig(cfg, delayMs = 600) {
+  saveConfigPending = cfg;
+  if (saveConfigTimerId) clearTimeout(saveConfigTimerId);
+  saveConfigTimerId = setTimeout(async () => {
+    const toSave = saveConfigPending;
+    saveConfigPending = null;
+    saveConfigTimerId = null;
+    if (toSave) await saveConfig(toSave);
+  }, delayMs);
+}
+
+async function flushScheduledConfig() {
+  if (saveConfigTimerId) {
+    clearTimeout(saveConfigTimerId);
+    saveConfigTimerId = null;
+  }
+  const toSave = saveConfigPending;
+  saveConfigPending = null;
+  if (toSave) await saveConfig(toSave);
+}
+
+let saveExpandPending = null;
+let saveExpandTimerId = null;
+function scheduleSaveExpandState(state, delayMs = 600) {
+  saveExpandPending = state;
+  if (saveExpandTimerId) clearTimeout(saveExpandTimerId);
+  saveExpandTimerId = setTimeout(async () => {
+    const toSave = saveExpandPending;
+    saveExpandPending = null;
+    saveExpandTimerId = null;
+    if (toSave) await saveExpandState(toSave);
+  }, delayMs);
+}
+
+async function flushScheduledExpandState() {
+  if (saveExpandTimerId) {
+    clearTimeout(saveExpandTimerId);
+    saveExpandTimerId = null;
+  }
+  const toSave = saveExpandPending;
+  saveExpandPending = null;
+  if (toSave) await saveExpandState(toSave);
+}
+
 async function loadExpandState() {
   const raw = await storageGet(QUEUE_EXPAND_KEY);
   return raw && typeof raw === "object" ? raw : {};
@@ -1097,7 +1144,7 @@ async function run(options = {}) {
 
     showMain();
 
-  const blocks = [];
+  const items = [];
   const notifyUpdates = [];
   const expandState = await loadExpandState();
 
@@ -1107,7 +1154,8 @@ async function run(options = {}) {
     const parsed = parseServiceNowListLink(entry.link);
     if (parsed.error) {
       const opts = { queueId: entry.id, expanded: false };
-      blocks.push("", formatCountsBlock(entry.topic, makeZeroCounts(), entry.link, null, opts), parsed.error);
+      const html = formatCountsBlock(entry.topic, makeZeroCounts(), entry.link, null, opts);
+      items.push({ total: 0, html, errorHtml: parsed.error });
       continue;
     }
 
@@ -1122,7 +1170,9 @@ async function run(options = {}) {
         return;
       }
       if (!agentCountsResp.success) {
-        blocks.push("", `<strong>${entry.topic} - 0</strong>`, JSON.stringify(agentCountsResp, null, 2));
+        const opts = { queueId: entry.id, expanded: false };
+        const html = formatCountsBlock(entry.topic, makeZeroCounts(), entry.link, null, opts);
+        items.push({ total: 0, html, errorHtml: JSON.stringify(agentCountsResp, null, 2) });
         continue;
       }
       customCounts = agentCountsResp.counts;
@@ -1141,7 +1191,9 @@ async function run(options = {}) {
       }
 
       if (!countsResponse.success) {
-        blocks.push("", `<strong>${entry.topic} - 0</strong>`, JSON.stringify(countsResponse, null, 2));
+        const opts = { queueId: entry.id, expanded: false };
+        const html = formatCountsBlock(entry.topic, makeZeroCounts(), entry.link, null, opts);
+        items.push({ total: 0, html, errorHtml: JSON.stringify(countsResponse, null, 2) });
         continue;
       }
 
@@ -1151,15 +1203,19 @@ async function run(options = {}) {
 
     const total = computeTotalCount(customCounts);
     const savedExpanded = expandState?.[entry.id];
-    const expanded = typeof savedExpanded === "boolean" ? savedExpanded : total > 0;
+    const expanded = total > 0 ? true : (typeof savedExpanded === "boolean" ? savedExpanded : false);
     const opts = { queueId: entry.id, expanded };
-    blocks.push("", formatCountsBlock(displayTopic, customCounts, entry.link, typeBadge, opts));
+    const html = formatCountsBlock(displayTopic, customCounts, entry.link, typeBadge, opts);
+    items.push({ total, html });
     if (entry.notifyEnabled !== false) {
       notifyUpdates.push({ queueId: entry.id, topic: displayTopic, counts: customCounts });
     }
   }
 
-  output.innerHTML = blocks.join("");
+  const active = items.filter((it) => it.total > 0);
+  const inactive = items.filter((it) => !(it.total > 0));
+  const ordered = [...active, ...inactive];
+  output.innerHTML = ordered.map((it) => (it.html + (it.errorHtml ? String(it.errorHtml) : ""))).join("");
 
   // Toggle handler: remember last expanded state
   output?.addEventListener?.("click", async (e) => {
@@ -1184,7 +1240,7 @@ async function run(options = {}) {
     const current = await loadExpandState();
     const next = { ...(current || {}) };
     next[qid] = nextExpanded;
-    await saveExpandState(next);
+    scheduleSaveExpandState(next);
   });
 
   // Notify in the background (storage.local) without affecting UI.
@@ -1240,6 +1296,8 @@ doneButton?.addEventListener("click", async () => {
     renderSavedLinks(currentConfig);
     return;
   }
+  // Ensure any pending order changes are saved before switching views
+  await flushScheduledConfig();
   showMain();
   run();
 });
@@ -1275,6 +1333,9 @@ backFromSettingsButton?.addEventListener("click", async () => {
     return;
   }
 
+  // Ensure pending saves are flushed when returning to main
+  await flushScheduledConfig();
+  await flushScheduledExpandState();
   showMain();
   run();
 });
@@ -1350,7 +1411,7 @@ savedLinksEl?.addEventListener("click", async (e) => {
         l.id === toggleId ? { ...l, notifyEnabled: l.notifyEnabled === false } : l
       )
     };
-    await saveConfig(next);
+    scheduleSaveConfig(next);
     showSetup();
     renderSavedLinks(next);
     return;
@@ -1366,7 +1427,7 @@ savedLinksEl?.addEventListener("click", async (e) => {
       const tmp = arr[idx - 1];
       arr[idx - 1] = arr[idx];
       arr[idx] = tmp;
-      await saveConfig({ links: arr });
+      scheduleSaveConfig({ links: arr });
 
       // Reorder DOM in place to keep pointer on the same element
       const row = btn.closest('.savedLinkRow');
@@ -1396,7 +1457,7 @@ savedLinksEl?.addEventListener("click", async (e) => {
       const tmp = arr[idx + 1];
       arr[idx + 1] = arr[idx];
       arr[idx] = tmp;
-      await saveConfig({ links: arr });
+      scheduleSaveConfig({ links: arr });
 
       // Reorder DOM in place to keep pointer on the same element
       const row = btn.closest('.savedLinkRow');
@@ -1420,7 +1481,7 @@ savedLinksEl?.addEventListener("click", async (e) => {
   if (!id) return;
   currentConfig = currentConfig || (await loadConfig());
   const next = { links: (currentConfig.links || []).filter((l) => l.id !== id) };
-  await saveConfig(next);
+  scheduleSaveConfig(next);
   showSetup();
   renderSavedLinks(next);
 });
@@ -1428,9 +1489,22 @@ savedLinksEl?.addEventListener("click", async (e) => {
 removeAllButton?.addEventListener("click", async () => {
   currentConfig = currentConfig || (await loadConfig());
   const next = { links: [] };
-  await saveConfig(next);
+  scheduleSaveConfig(next);
   showSetup();
   renderSavedLinks(next);
+});
+
+// Flush pending saves when popup becomes hidden or is about to unload
+document.addEventListener("visibilitychange", async () => {
+  if (document.hidden) {
+    await flushScheduledConfig();
+    await flushScheduledExpandState();
+  }
+});
+
+window.addEventListener("beforeunload", async () => {
+  await flushScheduledConfig();
+  await flushScheduledExpandState();
 });
 
 run();
