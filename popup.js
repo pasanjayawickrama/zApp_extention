@@ -28,6 +28,7 @@ const settingsError = document.getElementById("settingsError");
 const refreshRateStatus = document.getElementById("refreshRateStatus");
 const cardEl = document.querySelector(".card");
 const mainStatusEl = document.getElementById("mainStatus");
+let toggleListenerAttached = false;
 
 const PRIORITY_BUCKETS = [
   "1 - Critical",
@@ -305,11 +306,12 @@ function setMainStatus(text) {
 }
 
 function setMainLoading(isLoading, { statusText } = {}) {
-  if (output) output.classList.toggle("isLoading", Boolean(isLoading));
+  // UX: Keep last known counts visible; show subtle header spinner.
+  if (mainStatusEl) mainStatusEl.classList.toggle("isRefreshing", Boolean(isLoading));
+
   if (isLoading) {
-    // Keep header clean; show loading in the main content area.
-    setMainStatus("");
-    if (output) output.textContent = statusText || "Loading counts…";
+    // Do not clear existing status or output; refresh silently.
+    if (typeof statusText === "string") setMainStatus(statusText);
     return;
   }
 
@@ -809,7 +811,10 @@ function formatCountsBlock(title, counts, linkUrl, typeBadge, options = {}) {
   const badgeHtml = typeBadge
     ? `<span class="typeBadge ${escapeAttr(typeBadge.cls)}" title="${escapeAttr(typeBadge.label)}" aria-label="${escapeAttr(typeBadge.label)}">${escapeHtml(typeBadge.letter)}</span>`
     : "";
-  const headerInner = `${badgeHtml}<span class="topicHeaderText">${safeTitle}</span><span class="totalPill" aria-label="Total">${Number.isFinite(total) ? total : 0}</span>`;
+  const totalHtml = options?.skeleton
+    ? `<span class="totalPill skeleton skeleton-pill" aria-hidden="true"></span>`
+    : `<span class="totalPill" aria-label="Total">${Number.isFinite(total) ? total : 0}</span>`;
+  const headerInner = `${badgeHtml}<span class="topicHeaderText">${safeTitle}</span>${totalHtml}`;
   const header = safeLink
     ? `<strong><a class="topicLink" href="${escapeAttr(safeLink)}" target="_blank" rel="noreferrer">${headerInner}</a></strong>`
     : `<strong>${headerInner}</strong>`;
@@ -838,13 +843,15 @@ function formatCountsBlock(title, counts, linkUrl, typeBadge, options = {}) {
     const name = bucket.replace(/^\d+\s*-\s*/g, "");
     const prioClass =
       bucket === "1 - Critical" ? "prioCritical" : bucket === "2 - High" ? "prioHigh" : "prioPurple";
-    const numHtml = isActive ? String(n) : ".";
+    const numSpan = options?.skeleton
+      ? `<span class="prioNum skeleton skeleton-num" aria-hidden="true"></span>`
+      : `<span class="prioNum ${isActive ? "" : "isZero"}">${isActive ? String(n) : "."}</span>`;
 
     lines.push(
       `<div class="prioLine ${prioClass} ${isActive ? "isActive" : ""}">` +
         `<span class="prioDot" aria-hidden="true">${dot}</span>` +
         `<span class="prioName">${escapeHtml(name)}</span>` +
-        `<span class="prioNum ${isActive ? "" : "isZero"}">${numHtml}</span>` +
+        `${numSpan}` +
       `</div>`
     );
   }
@@ -1144,9 +1151,55 @@ async function run(options = {}) {
 
     showMain();
 
+    // Pre-render skeleton queues so the UI isn't empty on initial load
+    const expandState = await loadExpandState();
+    const orderedLinksForSkeleton = [...(currentConfig.links || [])];
+    if (!output?.innerHTML?.trim()) {
+      const skeletonHtml = orderedLinksForSkeleton
+        .map((entry) => {
+          const parsed = parseServiceNowListLink(entry.link);
+          const typeBadge = parsed?.table ? getTypeBadgeForTable(parsed.table) : null;
+          const savedExpanded = expandState?.[entry.id];
+          const expanded = typeof savedExpanded === "boolean" ? savedExpanded : false;
+          const opts = { queueId: entry.id, expanded, skeleton: true };
+          return formatCountsBlock(entry.topic, makeZeroCounts(), entry.link, typeBadge, opts);
+        })
+        .join("");
+      output.innerHTML = skeletonHtml;
+
+      // Attach toggle handler once so users can interact during load
+      if (!toggleListenerAttached) {
+        output?.addEventListener?.("click", async (e) => {
+          const btn = e?.target?.closest?.(".toggleButton");
+          if (!btn) return;
+          const container = btn.closest(".queueBlock");
+          if (!container) return;
+          const qid = container.getAttribute("data-qid") || "";
+          if (!qid) return;
+          const isCollapsed = container.classList.contains("collapsed");
+          const nextExpanded = isCollapsed;
+          container.classList.toggle("collapsed", !nextExpanded);
+          container.classList.toggle("expanded", nextExpanded);
+          const caretLabel = nextExpanded ? "Collapse" : "Expand";
+          const icon = btn.querySelector(".toggleIcon");
+          if (icon) {
+            icon.classList.toggle("isExpanded", nextExpanded);
+          }
+          btn.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+          btn.setAttribute("aria-label", `${caretLabel} queue`);
+          btn.setAttribute("title", caretLabel);
+          const current = await loadExpandState();
+          const next = { ...(current || {}) };
+          next[qid] = nextExpanded;
+          scheduleSaveExpandState(next);
+        });
+        toggleListenerAttached = true;
+      }
+    }
+
   const items = [];
   const notifyUpdates = [];
-  const expandState = await loadExpandState();
+  // expandState already loaded above for skeleton
 
   const orderedLinks = [...(currentConfig.links || [])];
 
@@ -1252,10 +1305,7 @@ async function run(options = {}) {
 
     if (shouldMarkLoading) setMainLoading(false);
   } finally {
-    // If we returned early, ensure we don't leave the UI looking "stuck".
-    if (shouldMarkLoading && output?.classList?.contains?.("isLoading")) {
-      output.classList.remove("isLoading");
-    }
+    // Spinner is controlled via header; no need to touch output content.
   }
 }
 
