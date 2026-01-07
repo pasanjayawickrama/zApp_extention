@@ -1,0 +1,27 @@
+#!/bin/sh
+# Block direct pushes to main; allow only merge commits (two parents), e.g. merges from dev with --no-ff.
+# This helps enforce the policy: develop on dev, update main via merges from dev.
+
+error_msg="Direct pushes to 'main' are blocked. Merge from 'dev' only (--no-ff)."
+
+# Read push refs from stdin: local_ref local_sha remote_ref remote_sha
+while read local_ref local_sha remote_ref remote_sha
+do
+  case "$remote_ref" in
+    refs/heads/main)
+      # If deleting the branch or no commit, skip
+      if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        continue
+      fi
+      parent_count=$(git cat-file -p "$local_sha" | grep -c '^parent ')
+      if [ "$parent_count" -lt 2 ]; then
+        echo "$error_msg" 1>&2
+        echo "Tip: git checkout main; git merge --no-ff -m 'Release from dev' dev; git push" 1>&2
+        exit 1
+      fi
+      ;;
+  esac
+
+done
+
+exit 0
