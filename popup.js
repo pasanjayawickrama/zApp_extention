@@ -46,6 +46,7 @@ function makeZeroCounts() {
 const STORAGE_KEY = "queueConfigV1";
 const REFRESH_RATE_KEY = "refreshRateV1";
 const NOTIFY_SETTINGS_KEY = "notifySettingsV1";
+const QUEUE_EXPAND_KEY = "queueExpandStateV1";
 const DEFAULT_REFRESH_SECONDS = 30;
 
 let currentConfig = null;
@@ -406,6 +407,15 @@ function storageSet(obj) {
   });
 }
 
+async function loadExpandState() {
+  const raw = await storageGet(QUEUE_EXPAND_KEY);
+  return raw && typeof raw === "object" ? raw : {};
+}
+
+async function saveExpandState(state) {
+  await storageSet({ [QUEUE_EXPAND_KEY]: state });
+}
+
 function makeEmptyConfig() {
   return { links: [] };
 }
@@ -422,7 +432,8 @@ function normalizeConfig(raw) {
           id: String(x.id || "").trim() || String(Date.now()),
           topic: String(x.topic || "").trim(),
           link: String(x.link || "").trim(),
-          notifyEnabled: x.notifyEnabled !== false
+          notifyEnabled: x.notifyEnabled !== false,
+          pinned: x.pinned === true
         }))
         .filter((x) => x.topic && x.link)
     };
@@ -436,7 +447,8 @@ function normalizeConfig(raw) {
           id: "legacy",
           topic: String(raw.topic).trim(),
           link: String(raw.link).trim(),
-          notifyEnabled: true
+          notifyEnabled: true,
+          pinned: false
         }
       ]
     };
@@ -482,11 +494,11 @@ function renderSavedLinks(cfg) {
         const bellTitle = notifyOn ? "Notifications on" : "Notifications off";
         return `
         <div class="savedLinkRow ${notifyOn ? "" : "savedLinkRowDisabled"}" data-id="${esc(l.id)}">
-          <div class="savedLinkText">
-            <div class="savedLinkTopic">${esc(l.topic)}</div>
-            <div class="savedLinkUrl">${esc(l.link)}</div>
-          </div>
+          <div class="savedLinkTopic">${esc(l.topic)}</div>
+          <div class="savedLinkUrl">${esc(l.link)}</div>
           <div class="savedLinkActions">
+            <button class="moveButton" type="button" data-move-up="${esc(l.id)}" aria-label="Move up" title="Move up">▲</button>
+            <button class="moveButton" type="button" data-move-down="${esc(l.id)}" aria-label="Move down" title="Move down">▼</button>
             <button
               class="bellButton"
               type="button"
@@ -544,6 +556,14 @@ function extractListIdTinyFromAgentListPath(pathname) {
   const m = /\/now\/cwf\/agent\/list\/params\/list-id\/([^\/]+)\/tiny-id\/([^\/]+)/i.exec(p);
   if (!m) return null;
   return { listId: m[1], tinyId: m[2] };
+}
+
+function getTypeBadgeForTable(tableName) {
+  const t = String(tableName || "").trim().toLowerCase();
+  if (!t) return null;
+  if (t === "sn_customerservice_case") return { letter: "C", cls: "typeBadgeCase", label: "Case" };
+  if (t === "sn_customerservice_task") return { letter: "T", cls: "typeBadgeTask", label: "Task" };
+  return null;
 }
 
 function tryParseUrl(raw) {
@@ -729,7 +749,7 @@ function computePriorityCountsFromListLayout(graphqlResponseData) {
   return counts;
 }
 
-function formatCountsBlock(title, counts, linkUrl) {
+function formatCountsBlock(title, counts, linkUrl, typeBadge, options = {}) {
   const total = computeTotalCount(counts);
   const safeTitle = escapeHtml(title);
 
@@ -739,25 +759,66 @@ function formatCountsBlock(title, counts, linkUrl) {
     return url.toString();
   })();
 
+  const badgeHtml = typeBadge
+    ? `<span class="typeBadge ${escapeAttr(typeBadge.cls)}" title="${escapeAttr(typeBadge.label)}" aria-label="${escapeAttr(typeBadge.label)}">${escapeHtml(typeBadge.letter)}</span>`
+    : "";
+  const headerInner = `${badgeHtml}<span class="topicHeaderText">${safeTitle}</span><span class="totalPill" aria-label="Total">${Number.isFinite(total) ? total : 0}</span>`;
   const header = safeLink
-    ? `<strong><a class="topicLink" href="${escapeAttr(safeLink)}" target="_blank" rel="noreferrer">${safeTitle} - ${total}</a></strong>`
-    : `<strong>${safeTitle} - ${total}</strong>`;
+    ? `<strong><a class="topicLink" href="${escapeAttr(safeLink)}" target="_blank" rel="noreferrer">${headerInner}</a></strong>`
+    : `<strong>${headerInner}</strong>`;
 
-  const lines = [header];
+  const queueId = String(options?.queueId || "");
+  const expanded = options?.expanded === true;
+  const caretLabel = expanded ? "Collapse" : "Expand";
+
+  const lines = [
+    `<div class="queueBlock ${expanded ? "expanded" : "collapsed"}" ${queueId ? `data-qid="${escapeAttr(queueId)}"` : ""}>`,
+    `<div class="topicHeader">` +
+      `<button class="toggleButton" type="button" aria-label="${escapeAttr(caretLabel)} queue" aria-expanded="${expanded ? "true" : "false"}" title="${escapeAttr(caretLabel)}">` +
+        `<svg class="toggleIcon ${expanded ? "isExpanded" : ""}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+          `<path d="M9 6l6 6-6 6"/>` +
+        `</svg>` +
+      `</button>` +
+      `${header}` +
+    `</div>`,
+    `<div class="queueBody">`
+  ];
   for (const bucket of PRIORITY_BUCKETS) {
-    const n = Number(counts?.[bucket] ?? 0);
-    const isHot = Number.isFinite(n) && n > 0;
-    const cls =
-      isHot && bucket === "1 - Critical"
-        ? "countHotCritical"
-        : isHot && bucket === "2 - High"
-          ? "countHotHigh"
-          : "";
+    const nRaw = Number(counts?.[bucket] ?? 0);
+    const n = Number.isFinite(nRaw) ? nRaw : 0;
+    const isActive = n > 0;
+    const dot = isActive ? "●" : "○";
+    const name = bucket.replace(/^\d+\s*-\s*/g, "");
+    const prioClass =
+      bucket === "1 - Critical" ? "prioCritical" : bucket === "2 - High" ? "prioHigh" : "prioPurple";
+    const numHtml = isActive ? String(n) : ".";
 
-    lines.push(`${bucket} : <span class="countNum ${cls}">${Number.isFinite(n) ? n : 0}</span>`);
+    lines.push(
+      `<div class="prioLine ${prioClass} ${isActive ? "isActive" : ""}">` +
+        `<span class="prioDot" aria-hidden="true">${dot}</span>` +
+        `<span class="prioName">${escapeHtml(name)}</span>` +
+        `<span class="prioNum ${isActive ? "" : "isZero"}">${numHtml}</span>` +
+      `</div>`
+    );
   }
-  if (counts.Unknown) lines.push(`Unknown : ${counts.Unknown}`);
-  return lines.join("\n");
+
+  const unknownRaw = Number(counts?.Unknown ?? 0);
+  const unknown = Number.isFinite(unknownRaw) ? unknownRaw : 0;
+  if (unknown) {
+    lines.push(
+      `<div class="prioLine prioPurple isActive">` +
+        `<span class="prioDot" aria-hidden="true">●</span>` +
+        `<span class="prioName">Unknown</span>` +
+        `<span class="prioNum">${unknown}</span>` +
+      `</div>`
+    );
+  }
+
+  // Avoid inserting literal newlines inside the <pre> container.
+  // Newlines can dominate perceived spacing (line-height) and hide small margin tweaks.
+  lines.push(`</div>`); // queueBody
+  lines.push(`</div>`); // queueBlock
+  return lines.join("");
 }
 
 function sendGraphql(body) {
@@ -1038,16 +1099,21 @@ async function run(options = {}) {
 
   const blocks = [];
   const notifyUpdates = [];
+  const expandState = await loadExpandState();
 
-  for (const entry of currentConfig.links) {
+  const orderedLinks = [...(currentConfig.links || [])];
+
+  for (const entry of orderedLinks) {
     const parsed = parseServiceNowListLink(entry.link);
     if (parsed.error) {
-      blocks.push("", formatCountsBlock(entry.topic, makeZeroCounts(), entry.link), parsed.error);
+      const opts = { queueId: entry.id, expanded: false };
+      blocks.push("", formatCountsBlock(entry.topic, makeZeroCounts(), entry.link, null, opts), parsed.error);
       continue;
     }
 
     let customCounts;
     let displayTopic = entry.topic;
+    let typeBadge = null;
     if (parsed.listId && parsed.tinyId) {
       // eslint-disable-next-line no-await-in-loop
       const agentCountsResp = await fetchAgentListCounts(parsed.listId, parsed.tinyId);
@@ -1060,9 +1126,7 @@ async function run(options = {}) {
         continue;
       }
       customCounts = agentCountsResp.counts;
-      if (agentCountsResp.tableLabel) {
-        displayTopic = `${entry.topic} (${agentCountsResp.tableLabel})`;
-      }
+      typeBadge = getTypeBadgeForTable(agentCountsResp.table);
     } else {
       // eslint-disable-next-line no-await-in-loop
       const countsResponse = await sendCaseCountsRequest({ table: parsed.table, query: parsed.query });
@@ -1082,15 +1146,46 @@ async function run(options = {}) {
       }
 
       customCounts = countsResponse.counts;
+      typeBadge = getTypeBadgeForTable(parsed.table);
     }
 
-    blocks.push("", formatCountsBlock(displayTopic, customCounts, entry.link));
+    const total = computeTotalCount(customCounts);
+    const savedExpanded = expandState?.[entry.id];
+    const expanded = typeof savedExpanded === "boolean" ? savedExpanded : total > 0;
+    const opts = { queueId: entry.id, expanded };
+    blocks.push("", formatCountsBlock(displayTopic, customCounts, entry.link, typeBadge, opts));
     if (entry.notifyEnabled !== false) {
       notifyUpdates.push({ queueId: entry.id, topic: displayTopic, counts: customCounts });
     }
   }
 
-  output.innerHTML = blocks.join("\n");
+  output.innerHTML = blocks.join("");
+
+  // Toggle handler: remember last expanded state
+  output?.addEventListener?.("click", async (e) => {
+    const btn = e?.target?.closest?.(".toggleButton");
+    if (!btn) return;
+    const container = btn.closest(".queueBlock");
+    if (!container) return;
+    const qid = container.getAttribute("data-qid") || "";
+    if (!qid) return;
+    const isCollapsed = container.classList.contains("collapsed");
+    const nextExpanded = isCollapsed;
+    container.classList.toggle("collapsed", !nextExpanded);
+    container.classList.toggle("expanded", nextExpanded);
+    const caretLabel = nextExpanded ? "Collapse" : "Expand";
+    const icon = btn.querySelector(".toggleIcon");
+    if (icon) {
+      icon.classList.toggle("isExpanded", nextExpanded);
+    }
+    btn.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+    btn.setAttribute("aria-label", `${caretLabel} queue`);
+    btn.setAttribute("title", caretLabel);
+    const current = await loadExpandState();
+    const next = { ...(current || {}) };
+    next[qid] = nextExpanded;
+    await saveExpandState(next);
+  });
 
   // Notify in the background (storage.local) without affecting UI.
   // First-run is handled in the service worker: it stores but does not notify.
@@ -1258,6 +1353,66 @@ savedLinksEl?.addEventListener("click", async (e) => {
     await saveConfig(next);
     showSetup();
     renderSavedLinks(next);
+    return;
+  }
+
+  const moveUpId = btn?.getAttribute?.("data-move-up");
+  if (moveUpId) {
+    // Persist order
+    currentConfig = currentConfig || (await loadConfig());
+    const arr = [...(currentConfig.links || [])];
+    const idx = arr.findIndex((l) => l.id === moveUpId);
+    if (idx > 0) {
+      const tmp = arr[idx - 1];
+      arr[idx - 1] = arr[idx];
+      arr[idx] = tmp;
+      await saveConfig({ links: arr });
+
+      // Reorder DOM in place to keep pointer on the same element
+      const row = btn.closest('.savedLinkRow');
+      const parent = row?.parentElement;
+      const prev = row?.previousElementSibling;
+      if (row && parent && prev) {
+        const prevTop = row.offsetTop;
+        parent.insertBefore(row, prev);
+        const newTop = row.offsetTop;
+        const container = savedLinksEl || parent;
+        if (container && typeof container.scrollTop === 'number') {
+          container.scrollTop += (newTop - prevTop);
+        }
+        btn.focus();
+      }
+    }
+    return;
+  }
+
+  const moveDownId = btn?.getAttribute?.("data-move-down");
+  if (moveDownId) {
+    // Persist order
+    currentConfig = currentConfig || (await loadConfig());
+    const arr = [...(currentConfig.links || [])];
+    const idx = arr.findIndex((l) => l.id === moveDownId);
+    if (idx !== -1 && idx < arr.length - 1) {
+      const tmp = arr[idx + 1];
+      arr[idx + 1] = arr[idx];
+      arr[idx] = tmp;
+      await saveConfig({ links: arr });
+
+      // Reorder DOM in place to keep pointer on the same element
+      const row = btn.closest('.savedLinkRow');
+      const parent = row?.parentElement;
+      const nextRow = row?.nextElementSibling;
+      if (row && parent && nextRow) {
+        const prevTop = row.offsetTop;
+        parent.insertBefore(row, nextRow.nextSibling);
+        const newTop = row.offsetTop;
+        const container = savedLinksEl || parent;
+        if (container && typeof container.scrollTop === 'number') {
+          container.scrollTop += (newTop - prevTop);
+        }
+        btn.focus();
+      }
+    }
     return;
   }
 
