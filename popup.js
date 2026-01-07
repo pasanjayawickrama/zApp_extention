@@ -30,6 +30,37 @@ const cardEl = document.querySelector(".card");
 const mainStatusEl = document.getElementById("mainStatus");
 let toggleListenerAttached = false;
 
+function attachToggleHandlerOnce() {
+  if (toggleListenerAttached) return;
+  if (!output) return;
+  output.addEventListener("click", async (e) => {
+    const btn = e?.target?.closest?.(".toggleButton");
+    if (!btn) return;
+    e.preventDefault();
+    const container = btn.closest(".queueBlock");
+    if (!container) return;
+    const qid = container.getAttribute("data-qid") || "";
+    if (!qid) return;
+    const isCollapsed = container.classList.contains("collapsed");
+    const nextExpanded = isCollapsed;
+    container.classList.toggle("collapsed", !nextExpanded);
+    container.classList.toggle("expanded", nextExpanded);
+    const caretLabel = nextExpanded ? "Collapse" : "Expand";
+    const icon = btn.querySelector(".toggleIcon");
+    if (icon) {
+      icon.classList.toggle("isExpanded", nextExpanded);
+    }
+    btn.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+    btn.setAttribute("aria-label", `${caretLabel} queue`);
+    btn.setAttribute("title", caretLabel);
+    const current = await loadExpandState();
+    const next = { ...(current || {}) };
+    next[qid] = nextExpanded;
+    scheduleSaveExpandState(next);
+  });
+  toggleListenerAttached = true;
+}
+
 const PRIORITY_BUCKETS = [
   "1 - Critical",
   "2 - High",
@@ -1168,33 +1199,7 @@ async function run(options = {}) {
       output.innerHTML = skeletonHtml;
 
       // Attach toggle handler once so users can interact during load
-      if (!toggleListenerAttached) {
-        output?.addEventListener?.("click", async (e) => {
-          const btn = e?.target?.closest?.(".toggleButton");
-          if (!btn) return;
-          const container = btn.closest(".queueBlock");
-          if (!container) return;
-          const qid = container.getAttribute("data-qid") || "";
-          if (!qid) return;
-          const isCollapsed = container.classList.contains("collapsed");
-          const nextExpanded = isCollapsed;
-          container.classList.toggle("collapsed", !nextExpanded);
-          container.classList.toggle("expanded", nextExpanded);
-          const caretLabel = nextExpanded ? "Collapse" : "Expand";
-          const icon = btn.querySelector(".toggleIcon");
-          if (icon) {
-            icon.classList.toggle("isExpanded", nextExpanded);
-          }
-          btn.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
-          btn.setAttribute("aria-label", `${caretLabel} queue`);
-          btn.setAttribute("title", caretLabel);
-          const current = await loadExpandState();
-          const next = { ...(current || {}) };
-          next[qid] = nextExpanded;
-          scheduleSaveExpandState(next);
-        });
-        toggleListenerAttached = true;
-      }
+      attachToggleHandlerOnce();
     }
 
   const items = [];
@@ -1270,31 +1275,8 @@ async function run(options = {}) {
   const ordered = [...active, ...inactive];
   output.innerHTML = ordered.map((it) => (it.html + (it.errorHtml ? String(it.errorHtml) : ""))).join("");
 
-  // Toggle handler: remember last expanded state
-  output?.addEventListener?.("click", async (e) => {
-    const btn = e?.target?.closest?.(".toggleButton");
-    if (!btn) return;
-    const container = btn.closest(".queueBlock");
-    if (!container) return;
-    const qid = container.getAttribute("data-qid") || "";
-    if (!qid) return;
-    const isCollapsed = container.classList.contains("collapsed");
-    const nextExpanded = isCollapsed;
-    container.classList.toggle("collapsed", !nextExpanded);
-    container.classList.toggle("expanded", nextExpanded);
-    const caretLabel = nextExpanded ? "Collapse" : "Expand";
-    const icon = btn.querySelector(".toggleIcon");
-    if (icon) {
-      icon.classList.toggle("isExpanded", nextExpanded);
-    }
-    btn.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
-    btn.setAttribute("aria-label", `${caretLabel} queue`);
-    btn.setAttribute("title", caretLabel);
-    const current = await loadExpandState();
-    const next = { ...(current || {}) };
-    next[qid] = nextExpanded;
-    scheduleSaveExpandState(next);
-  });
+  // Ensure toggle handler is attached (delegated) after rendering
+  attachToggleHandlerOnce();
 
   // Notify in the background (storage.local) without affecting UI.
   // First-run is handled in the service worker: it stores but does not notify.
