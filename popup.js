@@ -1427,7 +1427,7 @@ savedLinksEl?.addEventListener("click", async (e) => {
       const tmp = arr[idx - 1];
       arr[idx - 1] = arr[idx];
       arr[idx] = tmp;
-      scheduleSaveConfig({ links: arr });
+      await saveConfig({ links: arr });
 
       // Reorder DOM in place to keep pointer on the same element
       const row = btn.closest('.savedLinkRow');
@@ -1457,7 +1457,7 @@ savedLinksEl?.addEventListener("click", async (e) => {
       const tmp = arr[idx + 1];
       arr[idx + 1] = arr[idx];
       arr[idx] = tmp;
-      scheduleSaveConfig({ links: arr });
+      await saveConfig({ links: arr });
 
       // Reorder DOM in place to keep pointer on the same element
       const row = btn.closest('.savedLinkRow');
