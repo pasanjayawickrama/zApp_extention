@@ -446,6 +446,68 @@ body{
   color: var(--accent-2);
 }
 
+.topicHeader{
+  display: block;
+  margin-bottom: 5px;
+}
+
+.totalBadge{
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.prioLine{
+  display: grid;
+  grid-template-columns: 1.1em 11ch max-content;
+  align-items: center;
+  column-gap: 6px;
+  padding: 0;
+  margin: 0 0 5px 0;
+  line-height: 0.80;
+}
+
+.prioLine:last-child{
+  margin-bottom: 0;
+}
+
+.prioDot{
+  width: 1.1em;
+  text-align: center;
+  opacity: 0.65;
+}
+
+.prioName{
+  min-width: 0;
+  color: var(--muted);
+}
+
+.prioNum{
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  text-align: right;
+}
+
+.prioLine.isActive .prioDot{
+  opacity: 0.95;
+}
+
+.prioLine.isActive .prioName{
+  color: var(--text);
+}
+
+/* Subtle indicator colors (derived from existing theme variables) */
+.prioCritical .prioDot{
+  color: color-mix(in srgb, var(--danger) 45%, var(--text) 55%);
+}
+
+.prioHigh .prioDot{
+  color: color-mix(in srgb, var(--warn) 55%, var(--text) 45%);
+}
+
+.prioPurple .prioDot{
+  color: color-mix(in srgb, var(--accent-2) 70%, var(--text) 30%);
+}
+
 .countNum{
   font-variant-numeric: tabular-nums;
 }
