@@ -1,4 +1,29 @@
 # IFS Queue Monitor
+## Branch Strategy
+
+- **dev**: Active development happens here. All new commits land on `dev`.
+- **main**: Receives updates only via merges from `dev` (no direct commits).
+
+### Enforced via pre-push hook
+
+This repo includes a pre-push hook (tracked in `.githooks/pre-push`) that blocks direct pushes to `main` unless the commit is a merge commit (two parents), which is what `--no-ff` merges produce.
+
+To enable the hook locally:
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+Release to `main`:
+
+```powershell
+git checkout main
+git pull
+git merge --no-ff -m "Release from dev" dev
+git push
+```
+
+This ensures `main` only advances through merges from `dev`.
 
 This is a Chrome/Edge MV3 extension that shows **record counts by priority** (Cases and Tasks) for queues on `https://support.ifs.com/*`.
 
