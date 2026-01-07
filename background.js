@@ -8,6 +8,8 @@ const PREV_COUNTS_KEY = "prevCountsV1";
 const QUEUE_CONFIG_KEY = "queueConfigV1";
 // Stores refresh rate in seconds in chrome.storage.sync.
 const REFRESH_RATE_KEY = "refreshRateV1";
+// Stores notification settings (global enable + per-priority filters) in chrome.storage.sync.
+const NOTIFY_SETTINGS_KEY = "notifySettingsV1";
 // Alarm name for periodic refresh.
 const REFRESH_ALARM_NAME = "ifsQueueRefreshV1";
 // Default: 30 seconds. Note browsers may clamp alarms to >= ~1 minute.
@@ -20,6 +22,43 @@ const PRIORITY_BUCKETS = [
   "4 - Low",
   "5 - Planning"
 ];
+
+function normalizeNotifySettings(raw) {
+  const defaults = {
+    enabled: true,
+    priorities: {
+      "1 - Critical": true,
+      "2 - High": true,
+      "3 - Moderate": true,
+      "4 - Low": true,
+      "5 - Planning": true,
+      Unknown: true
+    }
+  };
+
+  if (!raw || typeof raw !== "object") return defaults;
+  const enabled = raw.enabled !== false;
+  const p = raw.priorities && typeof raw.priorities === "object" ? raw.priorities : {};
+  return {
+    enabled,
+    priorities: {
+      "1 - Critical": p["1 - Critical"] !== false,
+      "2 - High": p["2 - High"] !== false,
+      "3 - Moderate": p["3 - Moderate"] !== false,
+      "4 - Low": p["4 - Low"] !== false,
+      "5 - Planning": p["5 - Planning"] !== false,
+      Unknown: p.Unknown !== false
+    }
+  };
+}
+
+function loadNotifySettings() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get([NOTIFY_SETTINGS_KEY], (res) => {
+      resolve(normalizeNotifySettings(res?.[NOTIFY_SETTINGS_KEY]));
+    });
+  });
+}
 
 function parseJsonSafe(text) {
   try {
@@ -34,6 +73,28 @@ function looksUnauthenticated(res, text) {
   const redirectedToLogin = res.redirected && /login\.|login\.do|auth|sso/i.test(res.url);
   const loginHtml = looksLikeHtml && /login\.|login\.do|sso|sign in/i.test(text);
   return res.status === 401 || res.status === 403 || redirectedToLogin || loginHtml;
+}
+
+function describeFetchFailure(err, url) {
+  const msg = err?.name === "AbortError" ? "Request timed out" : (err?.message || String(err));
+  return [
+    `Network error while fetching ${url}: ${msg}`,
+    "If this persists: ensure you are logged in to support.ifs.com in a normal tab, and the extension has Site access to https://support.ifs.com/."
+  ].join(" ");
+}
+
+async function fetchTextWithTimeout(url, options, timeoutMs = 25000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...(options || {}), signal: controller.signal });
+    const text = await res.text();
+    return { ok: true, res, text };
+  } catch (err) {
+    return { ok: false, error: err };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function normalizeCounts(counts) {
@@ -52,9 +113,10 @@ function normalizeCounts(counts) {
   return out;
 }
 
-function buildIncreaseLines(queueTopic, prev, next) {
+function buildIncreaseLines(queueTopic, prev, next, { enabledBuckets } = {}) {
   const lines = [];
   for (const bucket of [...PRIORITY_BUCKETS, "Unknown"]) {
+    if (enabledBuckets && !enabledBuckets.has(bucket)) continue;
     const oldVal = Number(prev?.[bucket] ?? 0);
     const newVal = Number(next?.[bucket] ?? 0);
     if (Number.isFinite(oldVal) && Number.isFinite(newVal) && newVal > oldVal) {
@@ -93,6 +155,15 @@ function setPrevCounts(value) {
 }
 
 async function compareAndNotify(updates) {
+  const notifySettings = await loadNotifySettings();
+  const enabledBuckets = new Set();
+  if (notifySettings?.enabled) {
+    for (const bucket of PRIORITY_BUCKETS) {
+      if (notifySettings?.priorities?.[bucket] !== false) enabledBuckets.add(bucket);
+    }
+    if (notifySettings?.priorities?.Unknown !== false) enabledBuckets.add("Unknown");
+  }
+
   const prevMap = await getPrevCounts();
   const nextMap = { ...(prevMap || {}) };
   const allIncreaseLines = [];
@@ -113,15 +184,15 @@ async function compareAndNotify(updates) {
       continue;
     }
 
-    const lines = buildIncreaseLines(topic, prevCounts, nextCounts);
-    allIncreaseLines.push(...lines);
+    const lines = buildIncreaseLines(topic, prevCounts, nextCounts, { enabledBuckets });
+    if (lines.length) allIncreaseLines.push(...lines);
     nextMap[queueId] = { topic, counts: nextCounts, updatedAt: Date.now() };
   }
 
   // Update storage first to avoid repeated notifications on rapid refreshes.
   await setPrevCounts(nextMap);
 
-  if (allIncreaseLines.length) {
+  if (allIncreaseLines.length && notifySettings?.enabled && enabledBuckets.size) {
     await createGroupedNotification(allIncreaseLines);
     return { notified: true, increases: allIncreaseLines.length };
   }
@@ -358,13 +429,16 @@ function buildAgentListGraphqlBody(listId, tinyId, limit = 100, offset = 0) {
 }
 
 async function fetchGraphql(body) {
-  const res = await fetch("https://support.ifs.com/api/now/graphql", {
+  const url = "https://support.ifs.com/api/now/graphql";
+  const r = await fetchTextWithTimeout(url, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  const text = await res.text();
+  if (!r.ok) return { success: false, error: describeFetchFailure(r.error, url) };
+
+  const { res, text } = r;
   const contentType = res.headers.get("content-type") || "";
   if (looksUnauthenticated(res, text)) {
     return { success: false, needsLogin: true, http: { status: res.status, statusText: res.statusText, url: res.url, contentType } };
@@ -412,12 +486,15 @@ async function fetchCountsForTableQuery(table, query) {
   statsUrl.searchParams.set("sysparm_group_by", "priority");
   statsUrl.searchParams.set("sysparm_display_value", "true");
 
-  const res = await fetch(statsUrl.toString(), {
+  const statsUrlStr = statsUrl.toString();
+  const r = await fetchTextWithTimeout(statsUrlStr, {
     method: "GET",
     credentials: "include",
     headers: { Accept: "application/json" }
   });
-  const text = await res.text();
+  if (!r.ok) return { success: false, error: describeFetchFailure(r.error, statsUrlStr) };
+
+  const { res, text } = r;
   const contentType = res.headers.get("content-type") || "";
   if (looksUnauthenticated(res, text)) {
     return { success: false, needsLogin: true, http: { status: res.status, statusText: res.statusText, url: res.url, contentType } };
@@ -468,14 +545,18 @@ async function fetchCountsForTableQuery(table, query) {
     pageUrl.searchParams.set("sysparm_limit", String(limit));
     pageUrl.searchParams.set("sysparm_offset", String(offset));
 
+    const pageUrlStr = pageUrl.toString();
+
     // eslint-disable-next-line no-await-in-loop
-    const pageRes = await fetch(pageUrl.toString(), {
+    const pageR = await fetchTextWithTimeout(pageUrlStr, {
       method: "GET",
       credentials: "include",
       headers: { Accept: "application/json" }
     });
-    // eslint-disable-next-line no-await-in-loop
-    const pageText = await pageRes.text();
+    if (!pageR.ok) return { success: false, error: describeFetchFailure(pageR.error, pageUrlStr) };
+
+    const pageRes = pageR.res;
+    const pageText = pageR.text;
     if (looksUnauthenticated(pageRes, pageText)) {
       const ct = pageRes.headers.get("content-type") || "";
       return { success: false, needsLogin: true, http: { status: pageRes.status, statusText: pageRes.statusText, url: pageRes.url, contentType: ct } };
@@ -538,7 +619,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm?.name !== REFRESH_ALARM_NAME) return;
   (async () => {
     await refreshAndNotifyAllQueues();
-  })();
+  })().catch((err) => console.warn("IFS Queue Monitor refresh failed:", err));
 });
 
 // -----------------------------

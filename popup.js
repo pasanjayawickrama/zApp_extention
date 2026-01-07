@@ -15,6 +15,15 @@ const removeAllButton = document.getElementById("removeAll");
 const refreshMinutesInput = document.getElementById("refreshMinutes");
 const refreshSecondsInput = document.getElementById("refreshSeconds");
 const saveRefreshRateButton = document.getElementById("saveRefreshRate");
+const notifyAllEnabledInput = document.getElementById("notifyAllEnabled");
+const notifyP1Input = document.getElementById("notifyP1");
+const notifyP2Input = document.getElementById("notifyP2");
+const notifyP3Input = document.getElementById("notifyP3");
+const notifyP4Input = document.getElementById("notifyP4");
+const notifyP5Input = document.getElementById("notifyP5");
+const notifyUnknownInput = document.getElementById("notifyUnknown");
+const saveNotifySettingsButton = document.getElementById("saveNotifySettings");
+const notifySettingsStatus = document.getElementById("notifySettingsStatus");
 const settingsError = document.getElementById("settingsError");
 const refreshRateStatus = document.getElementById("refreshRateStatus");
 const cardEl = document.querySelector(".card");
@@ -36,11 +45,14 @@ function makeZeroCounts() {
 
 const STORAGE_KEY = "queueConfigV1";
 const REFRESH_RATE_KEY = "refreshRateV1";
+const NOTIFY_SETTINGS_KEY = "notifySettingsV1";
+const QUEUE_EXPAND_KEY = "queueExpandStateV1";
 const DEFAULT_REFRESH_SECONDS = 30;
 
 let currentConfig = null;
 let lastNonSettingsView = "main";
 let refreshRateLoadedSeconds = null;
+let notifySettingsLoaded = null;
 let mainAutoRefreshTimerId = null;
 let mainAutoRefreshInFlight = false;
 let mainAutoRefreshSeconds = null;
@@ -63,6 +75,106 @@ function setRefreshRateStatus(text) {
   }
   refreshRateStatus.hidden = false;
   refreshRateStatus.textContent = t;
+}
+
+function setNotifySettingsStatus(text) {
+  if (!notifySettingsStatus) return;
+  const t = String(text || "").trim();
+  if (!t) {
+    notifySettingsStatus.hidden = true;
+    notifySettingsStatus.textContent = "";
+    return;
+  }
+  notifySettingsStatus.hidden = false;
+  notifySettingsStatus.textContent = t;
+}
+
+function normalizeNotifySettings(raw) {
+  const defaults = {
+    enabled: true,
+    priorities: {
+      "1 - Critical": true,
+      "2 - High": true,
+      "3 - Moderate": true,
+      "4 - Low": true,
+      "5 - Planning": true,
+      Unknown: true
+    }
+  };
+
+  if (!raw || typeof raw !== "object") return defaults;
+  const enabled = raw.enabled !== false;
+  const p = raw.priorities && typeof raw.priorities === "object" ? raw.priorities : {};
+  return {
+    enabled,
+    priorities: {
+      "1 - Critical": p["1 - Critical"] !== false,
+      "2 - High": p["2 - High"] !== false,
+      "3 - Moderate": p["3 - Moderate"] !== false,
+      "4 - Low": p["4 - Low"] !== false,
+      "5 - Planning": p["5 - Planning"] !== false,
+      Unknown: p.Unknown !== false
+    }
+  };
+}
+
+function readNotifySettingsFromUI() {
+  const enabled = Boolean(notifyAllEnabledInput?.checked);
+  return {
+    enabled,
+    priorities: {
+      "1 - Critical": Boolean(notifyP1Input?.checked),
+      "2 - High": Boolean(notifyP2Input?.checked),
+      "3 - Moderate": Boolean(notifyP3Input?.checked),
+      "4 - Low": Boolean(notifyP4Input?.checked),
+      "5 - Planning": Boolean(notifyP5Input?.checked),
+      Unknown: Boolean(notifyUnknownInput?.checked)
+    }
+  };
+}
+
+function applyNotifyEnabledStateToUI(masterEnabled) {
+  const disabled = !masterEnabled;
+  const inputs = [notifyP1Input, notifyP2Input, notifyP3Input, notifyP4Input, notifyP5Input, notifyUnknownInput];
+  for (const el of inputs) {
+    if (el) el.disabled = disabled;
+  }
+}
+
+function updateNotifySettingsDirtyUI() {
+  if (!saveNotifySettingsButton) return;
+  if (!notifyAllEnabledInput) return;
+
+  const current = readNotifySettingsFromUI();
+  applyNotifyEnabledStateToUI(current.enabled);
+
+  const loaded = notifySettingsLoaded ? normalizeNotifySettings(notifySettingsLoaded) : null;
+  const normalizedCurrent = normalizeNotifySettings(current);
+  const dirty = loaded ? JSON.stringify(loaded) !== JSON.stringify(normalizedCurrent) : false;
+
+  saveNotifySettingsButton.disabled = !dirty;
+  saveNotifySettingsButton.classList.toggle("buttonDirty", dirty);
+  setNotifySettingsStatus(dirty ? "Unsaved changes" : "");
+}
+
+async function loadNotifySettingsToUI() {
+  if (!notifyAllEnabledInput) return;
+  const stored = await storageGet(NOTIFY_SETTINGS_KEY);
+  const s = normalizeNotifySettings(stored);
+  notifySettingsLoaded = s;
+
+  notifyAllEnabledInput.checked = s.enabled;
+  if (notifyP1Input) notifyP1Input.checked = s.priorities["1 - Critical"] !== false;
+  if (notifyP2Input) notifyP2Input.checked = s.priorities["2 - High"] !== false;
+  if (notifyP3Input) notifyP3Input.checked = s.priorities["3 - Moderate"] !== false;
+  if (notifyP4Input) notifyP4Input.checked = s.priorities["4 - Low"] !== false;
+  if (notifyP5Input) notifyP5Input.checked = s.priorities["5 - Planning"] !== false;
+  if (notifyUnknownInput) notifyUnknownInput.checked = s.priorities.Unknown !== false;
+
+  applyNotifyEnabledStateToUI(s.enabled);
+  if (saveNotifySettingsButton) saveNotifySettingsButton.disabled = true;
+  if (saveNotifySettingsButton) saveNotifySettingsButton.classList.remove("buttonDirty");
+  setNotifySettingsStatus("");
 }
 
 function getRefreshRateSecondsFromInputs() {
@@ -214,6 +326,18 @@ function setMainLoading(isLoading, { statusText } = {}) {
   }
 }
 
+function showLoginRequiredMessage() {
+  const msg = [
+    "Login required.",
+    "",
+    "1) Open https://support.ifs.com in a tab",
+    "2) Sign in",
+    "3) Re-open this popup"
+  ].join("\n");
+  if (output) output.textContent = msg;
+  setMainLoading(false, { statusText: "Login required" });
+}
+
 function clampSeconds(seconds) {
   const n = typeof seconds === "number" ? seconds : Number.parseInt(String(seconds ?? ""), 10);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_REFRESH_SECONDS;
@@ -283,6 +407,62 @@ function storageSet(obj) {
   });
 }
 
+// Debounced writers to reduce storage.sync write frequency
+let saveConfigPending = null;
+let saveConfigTimerId = null;
+function scheduleSaveConfig(cfg, delayMs = 600) {
+  saveConfigPending = cfg;
+  if (saveConfigTimerId) clearTimeout(saveConfigTimerId);
+  saveConfigTimerId = setTimeout(async () => {
+    const toSave = saveConfigPending;
+    saveConfigPending = null;
+    saveConfigTimerId = null;
+    if (toSave) await saveConfig(toSave);
+  }, delayMs);
+}
+
+async function flushScheduledConfig() {
+  if (saveConfigTimerId) {
+    clearTimeout(saveConfigTimerId);
+    saveConfigTimerId = null;
+  }
+  const toSave = saveConfigPending;
+  saveConfigPending = null;
+  if (toSave) await saveConfig(toSave);
+}
+
+let saveExpandPending = null;
+let saveExpandTimerId = null;
+function scheduleSaveExpandState(state, delayMs = 600) {
+  saveExpandPending = state;
+  if (saveExpandTimerId) clearTimeout(saveExpandTimerId);
+  saveExpandTimerId = setTimeout(async () => {
+    const toSave = saveExpandPending;
+    saveExpandPending = null;
+    saveExpandTimerId = null;
+    if (toSave) await saveExpandState(toSave);
+  }, delayMs);
+}
+
+async function flushScheduledExpandState() {
+  if (saveExpandTimerId) {
+    clearTimeout(saveExpandTimerId);
+    saveExpandTimerId = null;
+  }
+  const toSave = saveExpandPending;
+  saveExpandPending = null;
+  if (toSave) await saveExpandState(toSave);
+}
+
+async function loadExpandState() {
+  const raw = await storageGet(QUEUE_EXPAND_KEY);
+  return raw && typeof raw === "object" ? raw : {};
+}
+
+async function saveExpandState(state) {
+  await storageSet({ [QUEUE_EXPAND_KEY]: state });
+}
+
 function makeEmptyConfig() {
   return { links: [] };
 }
@@ -299,7 +479,8 @@ function normalizeConfig(raw) {
           id: String(x.id || "").trim() || String(Date.now()),
           topic: String(x.topic || "").trim(),
           link: String(x.link || "").trim(),
-          notifyEnabled: x.notifyEnabled !== false
+          notifyEnabled: x.notifyEnabled !== false,
+          pinned: x.pinned === true
         }))
         .filter((x) => x.topic && x.link)
     };
@@ -313,7 +494,8 @@ function normalizeConfig(raw) {
           id: "legacy",
           topic: String(raw.topic).trim(),
           link: String(raw.link).trim(),
-          notifyEnabled: true
+          notifyEnabled: true,
+          pinned: false
         }
       ]
     };
@@ -359,11 +541,11 @@ function renderSavedLinks(cfg) {
         const bellTitle = notifyOn ? "Notifications on" : "Notifications off";
         return `
         <div class="savedLinkRow ${notifyOn ? "" : "savedLinkRowDisabled"}" data-id="${esc(l.id)}">
-          <div class="savedLinkText">
-            <div class="savedLinkTopic">${esc(l.topic)}</div>
-            <div class="savedLinkUrl">${esc(l.link)}</div>
-          </div>
+          <div class="savedLinkTopic">${esc(l.topic)}</div>
+          <div class="savedLinkUrl">${esc(l.link)}</div>
           <div class="savedLinkActions">
+            <button class="moveButton" type="button" data-move-up="${esc(l.id)}" aria-label="Move up" title="Move up">▲</button>
+            <button class="moveButton" type="button" data-move-down="${esc(l.id)}" aria-label="Move down" title="Move down">▼</button>
             <button
               class="bellButton"
               type="button"
@@ -421,6 +603,14 @@ function extractListIdTinyFromAgentListPath(pathname) {
   const m = /\/now\/cwf\/agent\/list\/params\/list-id\/([^\/]+)\/tiny-id\/([^\/]+)/i.exec(p);
   if (!m) return null;
   return { listId: m[1], tinyId: m[2] };
+}
+
+function getTypeBadgeForTable(tableName) {
+  const t = String(tableName || "").trim().toLowerCase();
+  if (!t) return null;
+  if (t === "sn_customerservice_case") return { letter: "C", cls: "typeBadgeCase", label: "Case" };
+  if (t === "sn_customerservice_task") return { letter: "T", cls: "typeBadgeTask", label: "Task" };
+  return null;
 }
 
 function tryParseUrl(raw) {
@@ -606,7 +796,7 @@ function computePriorityCountsFromListLayout(graphqlResponseData) {
   return counts;
 }
 
-function formatCountsBlock(title, counts, linkUrl) {
+function formatCountsBlock(title, counts, linkUrl, typeBadge, options = {}) {
   const total = computeTotalCount(counts);
   const safeTitle = escapeHtml(title);
 
@@ -616,16 +806,66 @@ function formatCountsBlock(title, counts, linkUrl) {
     return url.toString();
   })();
 
+  const badgeHtml = typeBadge
+    ? `<span class="typeBadge ${escapeAttr(typeBadge.cls)}" title="${escapeAttr(typeBadge.label)}" aria-label="${escapeAttr(typeBadge.label)}">${escapeHtml(typeBadge.letter)}</span>`
+    : "";
+  const headerInner = `${badgeHtml}<span class="topicHeaderText">${safeTitle}</span><span class="totalPill" aria-label="Total">${Number.isFinite(total) ? total : 0}</span>`;
   const header = safeLink
-    ? `<strong><a class="topicLink" href="${escapeAttr(safeLink)}" target="_blank" rel="noreferrer">${safeTitle} - ${total}</a></strong>`
-    : `<strong>${safeTitle} - ${total}</strong>`;
+    ? `<strong><a class="topicLink" href="${escapeAttr(safeLink)}" target="_blank" rel="noreferrer">${headerInner}</a></strong>`
+    : `<strong>${headerInner}</strong>`;
 
-  const lines = [header];
+  const queueId = String(options?.queueId || "");
+  const expanded = options?.expanded === true;
+  const caretLabel = expanded ? "Collapse" : "Expand";
+
+  const lines = [
+    `<div class="queueBlock ${expanded ? "expanded" : "collapsed"}" ${queueId ? `data-qid="${escapeAttr(queueId)}"` : ""}>`,
+    `<div class="topicHeader">` +
+      `<button class="toggleButton" type="button" aria-label="${escapeAttr(caretLabel)} queue" aria-expanded="${expanded ? "true" : "false"}" title="${escapeAttr(caretLabel)}">` +
+        `<svg class="toggleIcon ${expanded ? "isExpanded" : ""}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+          `<path d="M9 6l6 6-6 6"/>` +
+        `</svg>` +
+      `</button>` +
+      `${header}` +
+    `</div>`,
+    `<div class="queueBody">`
+  ];
   for (const bucket of PRIORITY_BUCKETS) {
-    lines.push(`${bucket} : ${counts[bucket]}`);
+    const nRaw = Number(counts?.[bucket] ?? 0);
+    const n = Number.isFinite(nRaw) ? nRaw : 0;
+    const isActive = n > 0;
+    const dot = isActive ? "●" : "○";
+    const name = bucket.replace(/^\d+\s*-\s*/g, "");
+    const prioClass =
+      bucket === "1 - Critical" ? "prioCritical" : bucket === "2 - High" ? "prioHigh" : "prioPurple";
+    const numHtml = isActive ? String(n) : ".";
+
+    lines.push(
+      `<div class="prioLine ${prioClass} ${isActive ? "isActive" : ""}">` +
+        `<span class="prioDot" aria-hidden="true">${dot}</span>` +
+        `<span class="prioName">${escapeHtml(name)}</span>` +
+        `<span class="prioNum ${isActive ? "" : "isZero"}">${numHtml}</span>` +
+      `</div>`
+    );
   }
-  if (counts.Unknown) lines.push(`Unknown : ${counts.Unknown}`);
-  return lines.join("\n");
+
+  const unknownRaw = Number(counts?.Unknown ?? 0);
+  const unknown = Number.isFinite(unknownRaw) ? unknownRaw : 0;
+  if (unknown) {
+    lines.push(
+      `<div class="prioLine prioPurple isActive">` +
+        `<span class="prioDot" aria-hidden="true">●</span>` +
+        `<span class="prioName">Unknown</span>` +
+        `<span class="prioNum">${unknown}</span>` +
+      `</div>`
+    );
+  }
+
+  // Avoid inserting literal newlines inside the <pre> container.
+  // Newlines can dominate perceived spacing (line-height) and hide small margin tweaks.
+  lines.push(`</div>`); // queueBody
+  lines.push(`</div>`); // queueBlock
+  return lines.join("");
 }
 
 function sendGraphql(body) {
@@ -904,42 +1144,39 @@ async function run(options = {}) {
 
     showMain();
 
-  const blocks = [];
+  const items = [];
   const notifyUpdates = [];
+  const expandState = await loadExpandState();
 
-  for (const entry of currentConfig.links) {
+  const orderedLinks = [...(currentConfig.links || [])];
+
+  for (const entry of orderedLinks) {
     const parsed = parseServiceNowListLink(entry.link);
     if (parsed.error) {
-      blocks.push("", formatCountsBlock(entry.topic, makeZeroCounts(), entry.link), parsed.error);
+      const opts = { queueId: entry.id, expanded: false };
+      const html = formatCountsBlock(entry.topic, makeZeroCounts(), entry.link, null, opts);
+      items.push({ total: 0, html, errorHtml: parsed.error });
       continue;
     }
 
     let customCounts;
     let displayTopic = entry.topic;
+    let typeBadge = null;
     if (parsed.listId && parsed.tinyId) {
       // eslint-disable-next-line no-await-in-loop
       const agentCountsResp = await fetchAgentListCounts(parsed.listId, parsed.tinyId);
       if (agentCountsResp.needsLogin) {
-        output.textContent = JSON.stringify(
-          {
-            error: "Please log in to https://support.ifs.com",
-            hint: "Open support.ifs.com in a tab, sign in, then reopen this popup.",
-            details: agentCountsResp.http || undefined
-          },
-          null,
-          2
-        );
-        if (shouldMarkLoading) setMainLoading(false, { statusText: "Login required" });
+        showLoginRequiredMessage();
         return;
       }
       if (!agentCountsResp.success) {
-        blocks.push("", `<strong>${entry.topic} - 0</strong>`, JSON.stringify(agentCountsResp, null, 2));
+        const opts = { queueId: entry.id, expanded: false };
+        const html = formatCountsBlock(entry.topic, makeZeroCounts(), entry.link, null, opts);
+        items.push({ total: 0, html, errorHtml: JSON.stringify(agentCountsResp, null, 2) });
         continue;
       }
       customCounts = agentCountsResp.counts;
-      if (agentCountsResp.tableLabel) {
-        displayTopic = `${entry.topic} (${agentCountsResp.tableLabel})`;
-      }
+      typeBadge = getTypeBadgeForTable(agentCountsResp.table);
     } else {
       // eslint-disable-next-line no-await-in-loop
       const countsResponse = await sendCaseCountsRequest({ table: parsed.table, query: parsed.query });
@@ -949,34 +1186,62 @@ async function run(options = {}) {
       }
 
       if (countsResponse.needsLogin) {
-        output.textContent = JSON.stringify(
-          {
-            error: "Please log in to https://support.ifs.com",
-            hint: "Open support.ifs.com in a tab, sign in, then reopen this popup.",
-            details: countsResponse.http || undefined
-          },
-          null,
-          2
-        );
-        if (shouldMarkLoading) setMainLoading(false, { statusText: "Login required" });
+        showLoginRequiredMessage();
         return;
       }
 
       if (!countsResponse.success) {
-        blocks.push("", `<strong>${entry.topic} - 0</strong>`, JSON.stringify(countsResponse, null, 2));
+        const opts = { queueId: entry.id, expanded: false };
+        const html = formatCountsBlock(entry.topic, makeZeroCounts(), entry.link, null, opts);
+        items.push({ total: 0, html, errorHtml: JSON.stringify(countsResponse, null, 2) });
         continue;
       }
 
       customCounts = countsResponse.counts;
+      typeBadge = getTypeBadgeForTable(parsed.table);
     }
 
-    blocks.push("", formatCountsBlock(displayTopic, customCounts, entry.link));
+    const total = computeTotalCount(customCounts);
+    const savedExpanded = expandState?.[entry.id];
+    const expanded = total > 0 ? true : (typeof savedExpanded === "boolean" ? savedExpanded : false);
+    const opts = { queueId: entry.id, expanded };
+    const html = formatCountsBlock(displayTopic, customCounts, entry.link, typeBadge, opts);
+    items.push({ total, html });
     if (entry.notifyEnabled !== false) {
       notifyUpdates.push({ queueId: entry.id, topic: displayTopic, counts: customCounts });
     }
   }
 
-  output.innerHTML = blocks.join("\n");
+  const active = items.filter((it) => it.total > 0);
+  const inactive = items.filter((it) => !(it.total > 0));
+  const ordered = [...active, ...inactive];
+  output.innerHTML = ordered.map((it) => (it.html + (it.errorHtml ? String(it.errorHtml) : ""))).join("");
+
+  // Toggle handler: remember last expanded state
+  output?.addEventListener?.("click", async (e) => {
+    const btn = e?.target?.closest?.(".toggleButton");
+    if (!btn) return;
+    const container = btn.closest(".queueBlock");
+    if (!container) return;
+    const qid = container.getAttribute("data-qid") || "";
+    if (!qid) return;
+    const isCollapsed = container.classList.contains("collapsed");
+    const nextExpanded = isCollapsed;
+    container.classList.toggle("collapsed", !nextExpanded);
+    container.classList.toggle("expanded", nextExpanded);
+    const caretLabel = nextExpanded ? "Collapse" : "Expand";
+    const icon = btn.querySelector(".toggleIcon");
+    if (icon) {
+      icon.classList.toggle("isExpanded", nextExpanded);
+    }
+    btn.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+    btn.setAttribute("aria-label", `${caretLabel} queue`);
+    btn.setAttribute("title", caretLabel);
+    const current = await loadExpandState();
+    const next = { ...(current || {}) };
+    next[qid] = nextExpanded;
+    scheduleSaveExpandState(next);
+  });
 
   // Notify in the background (storage.local) without affecting UI.
   // First-run is handled in the service worker: it stores but does not notify.
@@ -1031,6 +1296,8 @@ doneButton?.addEventListener("click", async () => {
     renderSavedLinks(currentConfig);
     return;
   }
+  // Ensure any pending order changes are saved before switching views
+  await flushScheduledConfig();
   showMain();
   run();
 });
@@ -1045,6 +1312,7 @@ openSettingsFromMainButton?.addEventListener("click", () => {
   showSettings();
   showSettingsError("");
   loadRefreshRateToUI();
+  loadNotifySettingsToUI();
 });
 
 refreshMinutesInput?.addEventListener("input", () => {
@@ -1065,6 +1333,9 @@ backFromSettingsButton?.addEventListener("click", async () => {
     return;
   }
 
+  // Ensure pending saves are flushed when returning to main
+  await flushScheduledConfig();
+  await flushScheduledExpandState();
   showMain();
   run();
 });
@@ -1099,6 +1370,36 @@ saveRefreshRateButton?.addEventListener("click", async () => {
   }, 1200);
 });
 
+const notifyInputs = [
+  notifyAllEnabledInput,
+  notifyP1Input,
+  notifyP2Input,
+  notifyP3Input,
+  notifyP4Input,
+  notifyP5Input,
+  notifyUnknownInput
+].filter(Boolean);
+
+for (const el of notifyInputs) {
+  el.addEventListener("change", () => {
+    updateNotifySettingsDirtyUI();
+  });
+}
+
+saveNotifySettingsButton?.addEventListener("click", async () => {
+  showSettingsError("");
+  const s = normalizeNotifySettings(readNotifySettingsFromUI());
+  await storageSet({ [NOTIFY_SETTINGS_KEY]: s });
+  notifySettingsLoaded = s;
+  updateNotifySettingsDirtyUI();
+  setNotifySettingsStatus("Saved");
+  setTimeout(() => {
+    const current = normalizeNotifySettings(readNotifySettingsFromUI());
+    const loaded = notifySettingsLoaded ? normalizeNotifySettings(notifySettingsLoaded) : null;
+    if (loaded && JSON.stringify(loaded) === JSON.stringify(current)) setNotifySettingsStatus("");
+  }, 1200);
+});
+
 savedLinksEl?.addEventListener("click", async (e) => {
   const btn = e?.target;
 
@@ -1110,9 +1411,69 @@ savedLinksEl?.addEventListener("click", async (e) => {
         l.id === toggleId ? { ...l, notifyEnabled: l.notifyEnabled === false } : l
       )
     };
-    await saveConfig(next);
+    scheduleSaveConfig(next);
     showSetup();
     renderSavedLinks(next);
+    return;
+  }
+
+  const moveUpId = btn?.getAttribute?.("data-move-up");
+  if (moveUpId) {
+    // Persist order
+    currentConfig = currentConfig || (await loadConfig());
+    const arr = [...(currentConfig.links || [])];
+    const idx = arr.findIndex((l) => l.id === moveUpId);
+    if (idx > 0) {
+      const tmp = arr[idx - 1];
+      arr[idx - 1] = arr[idx];
+      arr[idx] = tmp;
+      await saveConfig({ links: arr });
+
+      // Reorder DOM in place to keep pointer on the same element
+      const row = btn.closest('.savedLinkRow');
+      const parent = row?.parentElement;
+      const prev = row?.previousElementSibling;
+      if (row && parent && prev) {
+        const prevTop = row.offsetTop;
+        parent.insertBefore(row, prev);
+        const newTop = row.offsetTop;
+        const container = savedLinksEl || parent;
+        if (container && typeof container.scrollTop === 'number') {
+          container.scrollTop += (newTop - prevTop);
+        }
+        btn.focus();
+      }
+    }
+    return;
+  }
+
+  const moveDownId = btn?.getAttribute?.("data-move-down");
+  if (moveDownId) {
+    // Persist order
+    currentConfig = currentConfig || (await loadConfig());
+    const arr = [...(currentConfig.links || [])];
+    const idx = arr.findIndex((l) => l.id === moveDownId);
+    if (idx !== -1 && idx < arr.length - 1) {
+      const tmp = arr[idx + 1];
+      arr[idx + 1] = arr[idx];
+      arr[idx] = tmp;
+      await saveConfig({ links: arr });
+
+      // Reorder DOM in place to keep pointer on the same element
+      const row = btn.closest('.savedLinkRow');
+      const parent = row?.parentElement;
+      const nextRow = row?.nextElementSibling;
+      if (row && parent && nextRow) {
+        const prevTop = row.offsetTop;
+        parent.insertBefore(row, nextRow.nextSibling);
+        const newTop = row.offsetTop;
+        const container = savedLinksEl || parent;
+        if (container && typeof container.scrollTop === 'number') {
+          container.scrollTop += (newTop - prevTop);
+        }
+        btn.focus();
+      }
+    }
     return;
   }
 
@@ -1120,7 +1481,7 @@ savedLinksEl?.addEventListener("click", async (e) => {
   if (!id) return;
   currentConfig = currentConfig || (await loadConfig());
   const next = { links: (currentConfig.links || []).filter((l) => l.id !== id) };
-  await saveConfig(next);
+  scheduleSaveConfig(next);
   showSetup();
   renderSavedLinks(next);
 });
@@ -1128,9 +1489,22 @@ savedLinksEl?.addEventListener("click", async (e) => {
 removeAllButton?.addEventListener("click", async () => {
   currentConfig = currentConfig || (await loadConfig());
   const next = { links: [] };
-  await saveConfig(next);
+  scheduleSaveConfig(next);
   showSetup();
   renderSavedLinks(next);
+});
+
+// Flush pending saves when popup becomes hidden or is about to unload
+document.addEventListener("visibilitychange", async () => {
+  if (document.hidden) {
+    await flushScheduledConfig();
+    await flushScheduledExpandState();
+  }
+});
+
+window.addEventListener("beforeunload", async () => {
+  await flushScheduledConfig();
+  await flushScheduledExpandState();
 });
 
 run();

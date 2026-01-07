@@ -7,6 +7,8 @@
   --border: rgba(244, 240, 255, 0.12);
   --accent: #7c3aed;
   --accent-2: #a78bfa;
+  --danger: #ef4444;
+  --warn: #fbbf24;
 }
 
 *{ box-sizing: border-box; }
@@ -87,6 +89,30 @@ body{
   overflow: auto;
 }
 
+.checkRow{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+  user-select: none;
+}
+
+.checkRow input[type="checkbox"]{
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-2);
+}
+
+.checkGroup{
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(0,0,0,0.14);
+}
+
 #main:not([hidden]){
   display: flex;
   flex-direction: column;
@@ -110,6 +136,11 @@ body{
 
 .mainTitle{
   margin-bottom: 0;
+}
+
+/* Slightly larger font for main page headers like "Queues Overview" and "Settings" */
+.setupTitle.mainTitle{
+  font-size: 14px;
 }
 
 .setupHeader{
@@ -234,6 +265,44 @@ body{
   padding-right: 2px;
 }
 
+/* Scrollbars: browser-provided, themed here (Chrome/Edge + Firefox). */
+.savedLinks,
+#settings,
+.output{
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent-2) 45%, transparent) transparent;
+}
+
+.savedLinks::-webkit-scrollbar,
+#settings::-webkit-scrollbar,
+.output::-webkit-scrollbar{
+  width: 6px;
+  height: 6px;
+}
+
+.savedLinks::-webkit-scrollbar-track,
+#settings::-webkit-scrollbar-track,
+.output::-webkit-scrollbar-track{
+  background: transparent;
+}
+
+.savedLinks::-webkit-scrollbar-thumb,
+#settings::-webkit-scrollbar-thumb,
+.output::-webkit-scrollbar-thumb{
+  background: color-mix(in srgb, var(--accent-2) 45%, transparent);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.savedLinks::-webkit-scrollbar-thumb:hover,
+#settings::-webkit-scrollbar-thumb:hover,
+.output::-webkit-scrollbar-thumb:hover{
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
 .setup .savedLinks{
   flex: 1;
   min-height: 0;
@@ -249,11 +318,16 @@ body{
 }
 
 .savedLinkRow{
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "topic actions"
+    "url url";
+  align-items: start;
+  column-gap: 8px;
+  row-gap: 4px;
+  padding: 8px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: rgba(0,0,0,0.14);
@@ -264,9 +338,10 @@ body{
 }
 
 .savedLinkActions{
+  grid-area: actions;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: 0 0 auto;
 }
 
@@ -282,10 +357,69 @@ body{
   cursor: pointer;
   line-height: 1;
 }
-
 .bellButton[data-state="on"]{
   color: var(--text);
   border-color: rgba(167, 139, 250, 0.32);
+  background: rgba(124, 58, 237, 0.14);
+}
+.bellButton:hover{
+  color: var(--text);
+  border-color: rgba(244, 240, 255, 0.22);
+}
+
+
+.moveButton{
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  line-height: 1;
+}
+.moveButton:hover{
+  color: var(--text);
+  border-color: rgba(244, 240, 255, 0.22);
+}
+
+.toggleButton{
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  margin-right: 6px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
+  box-shadow: none;
+}
+.toggleButton:hover{
+  color: var(--text);
+}
+.toggleButton:focus{ outline: none; box-shadow: none; }
+.toggleButton:focus-visible{ outline: none; box-shadow: none; }
+.toggleButton:-moz-focusring{ outline: none; }
+.toggleButton::-moz-focus-inner{ border: 0; padding: 0; }
+
+.toggleIcon{
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  vertical-align: middle;
+  transform-origin: 50% 50%;
+  transform: rotate(0deg);
+  transition: transform 120ms ease;
+}
+.toggleIcon.isExpanded{
+  transform: rotate(90deg);
+}
   background: rgba(124, 58, 237, 0.14);
 }
 
@@ -294,7 +428,10 @@ body{
   border-color: rgba(244, 240, 255, 0.22);
 }
 
-.savedLinkText{
+.savedLinkTopic{ grid-area: topic; }
+.savedLinkUrl{ grid-area: url; }
+.savedLinkTopic,
+.savedLinkUrl{
   min-width: 0;
 }
 
@@ -302,7 +439,7 @@ body{
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text);
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .savedLinkUrl{
@@ -375,20 +512,188 @@ body{
 }
 
 .mainStatus{
-  margin: 0;
+  margin: 0 0 6px 0;
 }
 
 .output strong{
   color: var(--accent-2);
 }
 
+.topicHeader{
+  display: block;
+  margin-bottom: 10px;
+}
+
+.queueBlock{
+  margin: 0 0 10px 0;
+}
+
+.queueBlock.collapsed .queueBody{
+  display: none;
+}
+
+.queueBlock.collapsed{
+  margin-bottom: 6px;
+}
+
+.queueBlock.collapsed .topicHeader{
+  margin-bottom: 0;
+}
+
+.toggleButton{
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 8px;
+  margin-right: 6px;
+  cursor: pointer;
+}
+
+.toggleButton:hover{
+  color: var(--text);
+  border-color: rgba(244, 240, 255, 0.22);
+}
+
+.totalPill{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  background: rgba(124, 58, 237, 0.14);
+  color: var(--text);
+  font-family: Arial, sans-serif;
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  min-width: 22px;
+}
+
+.prioLine{
+  display: grid;
+  grid-template-columns: 1.1em 11ch max-content;
+  align-items: center;
+  column-gap: 6px;
+  padding: 0;
+  margin: 0 0 7px 0;
+  line-height: 0.80;
+}
+
+.prioLine:last-child{
+  margin-bottom: 0;
+}
+
+.prioDot{
+  width: 1.1em;
+  text-align: center;
+  opacity: 0.65;
+}
+
+.prioName{
+  min-width: 0;
+  color: var(--muted);
+}
+
+.prioNum{
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  text-align: right;
+}
+
+.prioNum.isZero{
+  color: var(--muted);
+  opacity: 0.55;
+}
+
+.prioLine.isActive .prioDot{
+  opacity: 0.95;
+}
+
+.prioLine.isActive .prioName{
+  color: var(--text);
+}
+
+/* Subtle indicator colors (derived from existing theme variables) */
+.prioCritical .prioDot{
+  color: color-mix(in srgb, var(--danger) 45%, var(--text) 55%);
+}
+
+.prioHigh .prioDot{
+  color: color-mix(in srgb, var(--warn) 55%, var(--text) 45%);
+}
+
+.prioPurple .prioDot{
+  color: color-mix(in srgb, var(--accent-2) 70%, var(--text) 30%);
+}
+
+.countNum{
+  font-variant-numeric: tabular-nums;
+}
+
+.countHotCritical{
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.countHotHigh{
+  color: var(--warn);
+  font-weight: 700;
+}
+
 .topicLink{
   color: inherit;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .topicLink:hover{
   text-decoration: underline;
+}
+
+.topicHeaderText{
+  color: var(--accent-2);
+  font-weight: 400;
+}
+
+.typeBadge{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.4px;
+  line-height: 1;
+  color: var(--text);
+  background: rgba(124, 58, 237, 0.10);
+}
+
+.typeBadgeCase{
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 22%, var(--border));
+}
+
+.typeBadgeTask{
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
+}
+
+.topicText{
+  vertical-align: middle;
 }
 
 .topicLink:focus{
