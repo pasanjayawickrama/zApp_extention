@@ -512,7 +512,7 @@ body{
 }
 
 .mainStatus{
-  margin: 0;
+  margin: 0 0 6px 0;
 }
 
 .output strong{
