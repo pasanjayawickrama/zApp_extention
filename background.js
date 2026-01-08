@@ -113,6 +113,25 @@ function normalizeCounts(counts) {
   return out;
 }
 
+function formatBucketLabelForNotification(bucket) {
+  const b = String(bucket || "").trim();
+  if (!b) return "";
+
+  // Chrome notifications don't support HTML/CSS styling in message bodies.
+  // Use Unicode/emoji markers to approximate the popup's colored dots.
+  const name = b.replace(/^\d+\s*-\s*/g, "").trim() || b;
+
+  // Popup colors:
+  // - prioCritical: red
+  // - prioHigh: orange
+  // - prioPurple: purple (used for Moderate/Low/Planning + Unknown)
+  if (b === "1 - Critical") return `\uD83D\uDD34 - ${name}`; // 🔴
+  if (b === "2 - High") return `\uD83D\uDFE0 - ${name}`;     // 🟠
+  if (b === "Unknown") return `\uD83D\uDFE3 - ${name}`;      // 🟣
+  if (PRIORITY_BUCKETS.includes(b)) return `\uD83D\uDFE3 - ${name}`; // 🟣
+  return name;
+}
+
 function buildIncreaseLines(queueTopic, prev, next, { enabledBuckets } = {}) {
   const lines = [];
   for (const bucket of [...PRIORITY_BUCKETS, "Unknown"]) {
@@ -120,7 +139,8 @@ function buildIncreaseLines(queueTopic, prev, next, { enabledBuckets } = {}) {
     const oldVal = Number(prev?.[bucket] ?? 0);
     const newVal = Number(next?.[bucket] ?? 0);
     if (Number.isFinite(oldVal) && Number.isFinite(newVal) && newVal > oldVal) {
-      lines.push(`${queueTopic}: ${bucket} ${oldVal} → ${newVal}`);
+      const label = formatBucketLabelForNotification(bucket);
+      lines.push(`${queueTopic}: ${label} ${oldVal} → ${newVal}`);
     }
   }
   return lines;
