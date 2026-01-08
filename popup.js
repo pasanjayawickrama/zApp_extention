@@ -30,6 +30,103 @@ const cardEl = document.querySelector(".card");
 const mainStatusEl = document.getElementById("mainStatus");
 let toggleListenerAttached = false;
 
+const ZERO_COUNT_AUTO_COLLAPSE_MS = 1500;
+
+let zeroAutoCollapseObserver = null;
+
+function applyQueueExpandedState(container, expanded) {
+  if (!container) return;
+  container.classList.toggle("collapsed", !expanded);
+  container.classList.toggle("expanded", expanded);
+
+  const btn = container.querySelector?.(".toggleButton");
+  if (!btn) return;
+  const caretLabel = expanded ? "Collapse" : "Expand";
+  const icon = btn.querySelector?.(".toggleIcon");
+  if (icon) icon.classList.toggle("isExpanded", expanded);
+  btn.setAttribute("aria-expanded", expanded ? "true" : "false");
+  btn.setAttribute("aria-label", `${caretLabel} queue`);
+  btn.setAttribute("title", caretLabel);
+}
+
+function readQueueTotalFromContainer(container) {
+  if (!container) return null;
+  const raw = container.getAttribute?.("data-total");
+  if (raw === null || raw === undefined || String(raw).trim() === "") return null;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function clearZeroAutoCollapseTimer(container) {
+  if (!container) return;
+  const id = container.__zeroAutoCollapseTimerId;
+  if (id) clearTimeout(id);
+  container.__zeroAutoCollapseTimerId = null;
+  container.__zeroAutoCollapseToken = (container.__zeroAutoCollapseToken || 0) + 1;
+}
+
+function scheduleZeroAutoCollapseIfNeeded(container) {
+  if (!container) return;
+  const total = readQueueTotalFromContainer(container);
+  if (total !== 0) {
+    clearZeroAutoCollapseTimer(container);
+    return;
+  }
+
+  clearZeroAutoCollapseTimer(container);
+  const token = (container.__zeroAutoCollapseToken || 0) + 1;
+  container.__zeroAutoCollapseToken = token;
+
+  container.__zeroAutoCollapseTimerId = setTimeout(async () => {
+    if (!container.isConnected) return;
+    if (container.__zeroAutoCollapseToken !== token) return;
+    const totalNow = readQueueTotalFromContainer(container);
+    if (totalNow !== 0) return;
+    if (!container.classList.contains("expanded")) return;
+
+    applyQueueExpandedState(container, false);
+
+    const qid = String(container.getAttribute?.("data-qid") || "");
+    if (qid) {
+      const current = await loadExpandState();
+      const next = { ...(current || {}) };
+      next[qid] = false;
+      scheduleSaveExpandState(next);
+    }
+  }, ZERO_COUNT_AUTO_COLLAPSE_MS);
+}
+
+function scheduleZeroAutoCollapseForExpandedZeroCountQueues() {
+  if (!output) return;
+  const blocks = output.querySelectorAll?.('.queueBlock.expanded[data-total="0"]');
+  if (!blocks || !blocks.length) return;
+  for (const container of blocks) {
+    scheduleZeroAutoCollapseIfNeeded(container);
+  }
+}
+
+function startZeroAutoCollapseObserverOnce() {
+  if (zeroAutoCollapseObserver) return;
+  if (!output) return;
+
+  zeroAutoCollapseObserver = new MutationObserver(() => {
+    // Re-scan for any expanded zero-count queues and schedule collapse.
+    scheduleZeroAutoCollapseForExpandedZeroCountQueues();
+  });
+
+  try {
+    zeroAutoCollapseObserver.observe(output, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["class", "data-total"]
+    });
+  } catch {
+    // If observer fails for any reason, fall back to explicit scheduling calls.
+    zeroAutoCollapseObserver = null;
+  }
+}
+
 function attachToggleHandlerOnce() {
   if (toggleListenerAttached) return;
   if (!output) return;
@@ -43,16 +140,9 @@ function attachToggleHandlerOnce() {
     if (!qid) return;
     const isCollapsed = container.classList.contains("collapsed");
     const nextExpanded = isCollapsed;
-    container.classList.toggle("collapsed", !nextExpanded);
-    container.classList.toggle("expanded", nextExpanded);
-    const caretLabel = nextExpanded ? "Collapse" : "Expand";
-    const icon = btn.querySelector(".toggleIcon");
-    if (icon) {
-      icon.classList.toggle("isExpanded", nextExpanded);
-    }
-    btn.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
-    btn.setAttribute("aria-label", `${caretLabel} queue`);
-    btn.setAttribute("title", caretLabel);
+    applyQueueExpandedState(container, nextExpanded);
+    if (nextExpanded) scheduleZeroAutoCollapseIfNeeded(container);
+    else clearZeroAutoCollapseTimer(container);
     const current = await loadExpandState();
     const next = { ...(current || {}) };
     next[qid] = nextExpanded;
@@ -854,8 +944,11 @@ function formatCountsBlock(title, counts, linkUrl, typeBadge, options = {}) {
   const expanded = options?.expanded === true;
   const caretLabel = expanded ? "Collapse" : "Expand";
 
+  const totalForData = Number.isFinite(total) ? total : 0;
+  const totalDataAttr = options?.skeleton ? "" : `data-total=\"${escapeAttr(String(totalForData))}\"`;
+
   const lines = [
-    `<div class="queueBlock ${expanded ? "expanded" : "collapsed"}" ${queueId ? `data-qid="${escapeAttr(queueId)}"` : ""}>`,
+    `<div class="queueBlock ${expanded ? "expanded" : "collapsed"}" ${queueId ? `data-qid="${escapeAttr(queueId)}"` : ""} ${totalDataAttr}>`,
     `<div class="topicHeader">` +
       `<button class="toggleButton" type="button" aria-label="${escapeAttr(caretLabel)} queue" aria-expanded="${expanded ? "true" : "false"}" title="${escapeAttr(caretLabel)}">` +
         `<svg class="toggleIcon ${expanded ? "isExpanded" : ""}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
@@ -1168,6 +1261,8 @@ async function run(options = {}) {
   const shouldMarkLoading = true;
   setMainLoading(true);
 
+  startZeroAutoCollapseObserverOnce();
+
   try {
     currentConfig = await loadConfig();
 
@@ -1190,9 +1285,8 @@ async function run(options = {}) {
         .map((entry) => {
           const parsed = parseServiceNowListLink(entry.link);
           const typeBadge = parsed?.table ? getTypeBadgeForTable(parsed.table) : null;
-          const savedExpanded = expandState?.[entry.id];
-          const expanded = typeof savedExpanded === "boolean" ? savedExpanded : false;
-          const opts = { queueId: entry.id, expanded, skeleton: true };
+          // While loading, always start collapsed so the initial UI is consistent.
+          const opts = { queueId: entry.id, expanded: false, skeleton: true };
           return formatCountsBlock(entry.topic, makeZeroCounts(), entry.link, typeBadge, opts);
         })
         .join("");
@@ -1277,6 +1371,7 @@ async function run(options = {}) {
 
   // Ensure toggle handler is attached (delegated) after rendering
   attachToggleHandlerOnce();
+  scheduleZeroAutoCollapseForExpandedZeroCountQueues();
 
   // Notify in the background (storage.local) without affecting UI.
   // First-run is handled in the service worker: it stores but does not notify.
